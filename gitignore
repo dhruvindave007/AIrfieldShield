@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Django stuff
+/staticfiles/
+media/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Models
+ai_models/trained/

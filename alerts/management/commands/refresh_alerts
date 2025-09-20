@@ -1,0 +1,29 @@
+from django.core.management.base import BaseCommand
+from alerts.models import Alert
+from core.models import Prediction
+
+class Command(BaseCommand):
+    help = "Refresh alerts from latest predictions"
+
+    def handle(self, *args, **options):
+        self.stdout.write("🔁 Refreshing alerts from predictions...")
+
+        Alert.objects.all().delete()
+
+        for pred in Prediction.objects.order_by("-created_at")[:100]:
+            if (pred.thunderstorm_prob or 0) > 0.6:
+                Alert.objects.create(
+                    airfield=pred.airfield,
+                    alert_type="Thunderstorm",
+                    level="RED" if pred.thunderstorm_prob > 0.8 else "ORANGE",
+                    message=f"Thunderstorm risk: {pred.thunderstorm_prob:.2f} in next {pred.horizon_minutes} minutes"
+                )
+            if (pred.gale_wind_prob or 0) > 0.6:
+                Alert.objects.create(
+                    airfield=pred.airfield,
+                    alert_type="GaleWind",
+                    level="RED" if pred.gale_wind_prob > 0.8 else "ORANGE",
+                    message=f"Gale wind risk: {pred.gale_wind_prob:.2f} in next {pred.horizon_minutes} minutes"
+                )
+
+        self.stdout.write(self.style.SUCCESS("✅ Alerts refreshed"))

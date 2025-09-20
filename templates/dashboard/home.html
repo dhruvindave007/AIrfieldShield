@@ -1,0 +1,777 @@
+<!-- templates/dashboard/home.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Airfield Weather Dashboard</title>
+
+  <!-- Tailwind CDN (dev use) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
+  <style>
+    body { background: #f8fafc; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 6px 20px rgba(13, 38, 59, 0.06); }
+    #map { height: 460px; border-radius: 12px; }
+    .muted { color: #6b7280; }
+    .progress-bg { background: #eef2ff; border-radius: 999px; height: 12px; }
+    .progress-fill { height: 12px; border-radius: 999px; }
+  </style>
+</head>
+<body class="font-sans antialiased">
+
+  <!-- HEADER -->
+  <header class="bg-white border-b">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="w-10 h-10 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold">AW</div>
+        <div>
+          <div class="text-lg font-semibold">Airfield Weather Dashboard</div>
+          <div class="text-sm muted">Nowcasting · Alerts · Predictions · Storm overlays</div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2">
+          <label class="muted text-sm">Airfield</label>
+          <select id="airfieldSelect" class="px-3 py-1 border rounded-md bg-white"></select>
+        </div>
+        <button id="refreshBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Refresh</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN GRID -->
+  <main class="max-w-7xl mx-auto px-6 py-6 grid grid-cols-3 gap-6">
+
+    <!-- LEFT: Alerts / Predictions / Data Sources -->
+    <div class="col-span-1 space-y-6">
+      <!-- Alerts -->
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">Active Alerts</h2>
+          <div class="muted text-sm" id="alertsCount">—</div>
+        </div>
+        <div id="alertsContainer" class="mt-3 space-y-3">
+          <div class="muted">Loading alerts...</div>
+        </div>
+      </div>
+
+      <!-- Predictions -->
+      <div class="card p-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold">Latest Predictions</h2>
+          <div class="muted text-sm">Updated: <span id="predUpdate">—</span></div>
+        </div>
+        <div id="predictionsContainer" class="mt-3 space-y-3">
+          <div class="muted">Loading predictions...</div>
+        </div>
+      </div>
+
+      <!-- Data sources -->
+      <div class="card p-4">
+        <h2 class="text-lg font-semibold">Data Sources</h2>
+        <div id="dataSources" class="mt-3 grid gap-2">
+          <div class="muted">Checking sources...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT (wider): Map + Charts -->
+    <div class="col-span-2 space-y-6">
+      <!-- Map card -->
+      <div class="card p-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 class="text-lg font-semibold">Storm Activity Map</h2>
+            <div class="muted text-sm">Circular markers = storm centers; intensity controls radius/opac.</div>
+          </div>
+          <div class="muted text-sm">Auto-refresh: <span id="autoRefresh">10</span>s</div>
+        </div>
+
+        <div id="map" class="mt-4"></div>
+
+        <div class="mt-4 flex gap-3">
+          <div class="flex items-center gap-2 px-3 py-2 rounded-md border bg-white">
+            <span class="w-3 h-3 bg-purple-600 rounded-full inline-block"></span> Thunderstorm
+          </div>
+          <div class="flex items-center gap-2 px-3 py-2 rounded-md border bg-white">
+            <span class="w-3 h-3 bg-orange-500 rounded-full inline-block"></span> GaleWind
+          </div>
+          <div class="flex items-center gap-2 px-3 py-2 rounded-md border bg-white">
+            <span class="w-3 h-3 bg-sky-500 rounded-full inline-block"></span> RainShower
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom cards: Chart + Weather summary -->
+      <div class="card p-4 grid grid-cols-2 gap-4">
+        <div>
+          <h3 class="font-semibold">Risk Trend (6h)</h3>
+          <div class="mt-2" style="height:220px;">
+            <canvas id="riskTrendChart"></canvas>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="font-semibold">Current Weather</h3>
+          <div id="weatherSummary" class="mt-3 space-y-2 muted">Loading...</div>
+          <div class="mt-4">
+            <h4 class="font-medium">Map Controls</h4>
+            <div class="mt-2 flex gap-2">
+              <button id="zoomToAirfield" class="px-3 py-2 bg-slate-100 rounded-md">Zoom to Airfield</button>
+              <button id="toggleStorms" class="px-3 py-2 bg-slate-100 rounded-md">Toggle Storms</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Minimal footer -->
+  <footer class="max-w-7xl mx-auto px-6 py-4 text-sm muted">
+    <div>Prototype · AI/ML Nowcasting — simulated data for visualization</div>
+  </footer>
+
+<script>
+/* Dashboard JS: expects /api/frontend/dashboard/?airfield=... and /api/predictions/history/?airfield=...&hours=6 */
+
+const DEFAULT_REFRESH = 10; // seconds
+let refreshSec = DEFAULT_REFRESH;
+let refreshCountdown = refreshSec;
+let refreshTimer = null;
+let map = null;
+let stormLayerGroup = null;
+let animateHandle = null;
+let trendChart = null;
+let currentAirfieldId = null;
+let currentAirfieldICAO = null;
+let stormsVisible = true;
+let lastDashboard = null;
+
+function el(q){return document.querySelector(q)}
+function elAll(q){return Array.from(document.querySelectorAll(q))}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await populateAirfields();
+  initMap();
+  bindControls();
+  startAutoRefresh();
+  await loadDashboard();
+});
+
+async function populateAirfields(){
+  const sel = el('#airfieldSelect');
+  sel.innerHTML = '';
+  try {
+    const r = await fetch('/api/airfields/?limit=200');
+    const j = await r.json();
+    let list = j.results || j;
+    if (!Array.isArray(list)) list = [];
+    if (list.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = 'TEST';
+      opt.textContent = 'Test Field (TEST)';
+      sel.appendChild(opt);
+      currentAirfieldICAO = 'TEST';
+      return;
+    }
+    list.forEach(a => {
+      const opt = document.createElement('option');
+      // prefer ICAO as the select value for query simplicity
+      opt.value = a.icao || a.id || '';
+      opt.textContent = `${a.name} (${a.icao || ''})`;
+      sel.appendChild(opt);
+    });
+    sel.selectedIndex = 0;
+    const first = sel.options[sel.selectedIndex];
+    currentAirfieldICAO = first.value;
+  } catch (e) {
+    console.warn('Failed to load airfields', e);
+    const opt = document.createElement('option');
+    opt.value = 'TEST';
+    opt.textContent = 'Test Field (TEST)';
+    sel.appendChild(opt);
+    currentAirfieldICAO = 'TEST';
+  }
+}
+
+function initMap(){
+  map = L.map('map', { zoomControl: true }).setView([23.02, 72.57], 7);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+  stormLayerGroup = L.layerGroup().addTo(map);
+}
+
+/* animateStorms: supports Point and Polygon features.
+   Points -> circle markers; Polygons -> polygon shapes.
+   Points drift using movement vector.
+*/
+function animateStorms(featureCollection) {
+  stormLayerGroup.clearLayers();
+  if (!featureCollection || !featureCollection.features) return;
+
+  // For points we keep them in an array to animate coords in-place
+  const points = featureCollection.features.filter(f => f.geometry && f.geometry.type === 'Point');
+  const polygons = featureCollection.features.filter(f => f.geometry && f.geometry.type === 'Polygon');
+
+  // render polygons statically
+  polygons.forEach(f => {
+    const latlngs = f.geometry.coordinates[0].map(pt => [pt[1], pt[0]]);
+    L.polygon(latlngs, {
+      color: '#7c3aed',
+      weight: 2,
+      fillOpacity: Math.max(0.05, Math.min(0.9, f.properties.intensity || 0.4))
+    }).addTo(stormLayerGroup);
+  });
+
+  // animated points: draw and then update positions on RAF loop
+  // convert to mutable items with velocity in degrees/sec
+  const items = points.map(f => {
+    const p = f.properties || {};
+    const mv = p.movement || {direction: 0, speed_kmh: 0};
+    const dirRad = (mv.direction || 0) * Math.PI/180;
+    const degPerSec = ((mv.speed_kmh || 0) / 3600) / 111; // approx deg lat/sec
+    const dlat = degPerSec * Math.cos(dirRad);
+    // approximate lon adjacency; we'll use lat of point
+    const lat0 = f.geometry.coordinates[1] || 0;
+    const dlon = degPerSec * Math.sin(dirRad) / (Math.cos(lat0 * Math.PI/180) || 1);
+    return { f, dlat, dlon };
+  });
+
+  let last = performance.now();
+  if (animateHandle) {
+    cancelAnimationFrame(animateHandle);
+    animateHandle = null;
+  }
+
+  function step(now) {
+    const dt = (now - last) / 1000.0;
+    last = now;
+
+    // update positions
+    items.forEach(item => {
+      const geom = item.f.geometry;
+      if (!geom || geom.type !== 'Point') return;
+      geom.coordinates[1] += item.dlat * dt * 0.5; // scale a bit for pleasant speed
+      geom.coordinates[0] += item.dlon * dt * 0.5;
+    });
+
+    // clear and re-render points
+    stormLayerGroup.clearLayers();
+    polygons.forEach(f => {
+      const latlngs = f.geometry.coordinates[0].map(pt => [pt[1], pt[0]]);
+      L.polygon(latlngs, { color: '#7c3aed', weight: 2, fillOpacity: Math.max(0.05, Math.min(0.9, f.properties.intensity || 0.4)) }).addTo(stormLayerGroup);
+    });
+    items.forEach(item => {
+      const f = item.f;
+      const p = f.properties || {};
+      const [lon, lat] = f.geometry.coordinates;
+      const color = p.type === 'Thunderstorm' ? '#7c3aed' : (p.type === 'GaleWind' ? '#f97316' : '#0ea5e9');
+      const radius = 10000 * Math.max(0.2, Math.min(1.5, (p.intensity || 0.5))); // in meters
+      const circle = L.circle([lat, lon], {
+        radius,
+        color,
+        weight: 1,
+        fillColor: color,
+        fillOpacity: 0.12 + (p.intensity || 0.4) * 0.6
+      }).addTo(stormLayerGroup);
+      circle.bindPopup(`<b>${p.type || 'Storm'}</b><br/>Intensity: ${p.intensity || 0}<br/>Moving ${p.movement?.direction || 0}° @ ${p.movement?.speed_kmh || 0} km/h`);
+    });
+
+    if (stormsVisible) {
+      animateHandle = requestAnimationFrame(step);
+    }
+  }
+
+  last = performance.now();
+  animateHandle = requestAnimationFrame(step);
+}
+
+/* Controls & bindings */
+function bindControls(){
+  el('#airfieldSelect').addEventListener('change', async (ev) => {
+    currentAirfieldICAO = ev.target.value;
+    await loadDashboard();
+  });
+
+  el('#refreshBtn').addEventListener('click', async () => { await loadDashboard(); });
+
+  el('#zoomToAirfield').addEventListener('click', () => {
+    if (lastDashboard && lastDashboard.airfield && lastDashboard.airfield.latitude && lastDashboard.airfield.longitude) {
+      map.setView([ lastDashboard.airfield.latitude, lastDashboard.airfield.longitude ], 10, { animate: true });
+    }
+  });
+
+  el('#toggleStorms').addEventListener('click', () => {
+    stormsVisible = !stormsVisible;
+    if (!stormsVisible) {
+      stormLayerGroup.clearLayers();
+      if (animateHandle) { cancelAnimationFrame(animateHandle); animateHandle = null; }
+    } else if (lastDashboard && lastDashboard.stormCells) {
+      animateStorms(lastDashboard.stormCells);
+    }
+  });
+}
+
+/* Dashboard load & render */
+async function loadDashboard(){
+  el('#alertsContainer').innerHTML = '<div class="muted">Loading alerts...</div>';
+  el('#predictionsContainer').innerHTML = '<div class="muted">Loading predictions...</div>';
+  el('#dataSources').innerHTML = '<div class="muted">Checking sources...</div>';
+  el('#weatherSummary').innerHTML = 'Loading...';
+
+  const q = currentAirfieldICAO || 'TEST';
+  const url = `/api/frontend/dashboard/?airfield=${encodeURIComponent(q)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    lastDashboard = data;
+    renderDashboard(data);
+  } catch (err) {
+    console.error('Failed to fetch dashboard payload', err);
+    el('#alertsContainer').innerHTML = '<div class="muted">Failed to load alerts</div>';
+    el('#predictionsContainer').innerHTML = '<div class="muted">Failed to load predictions</div>';
+    el('#dataSources').innerHTML = '<div class="muted">Failed to load sources</div>';
+    el('#weatherSummary').innerHTML = 'Failed to load weather';
+  }
+}
+
+function renderDashboard(data){
+  // Alerts
+  const alerts = data.alerts || [];
+  el('#alertsCount').textContent = alerts.length;
+  const ac = el('#alertsContainer');
+  ac.innerHTML = '';
+  if (!alerts.length) {
+    ac.innerHTML = '<div class="muted">No active alerts.</div>';
+  } else {
+    alerts.slice(0, 8).forEach(a => {
+      const level = a.level || 'ORANGE';
+      const cls = level === 'RED' ? 'bg-red-50 border-l-4 border-red-600' : (level === 'ORANGE' ? 'bg-orange-50 border-l-4 border-orange-500' : 'bg-green-50 border-l-4 border-green-600');
+      const msg = a.message || '';
+      const created = a.created_at ? new Date(a.created_at).toLocaleString() : '';
+      const d = document.createElement('div');
+      d.className = cls + ' p-3 rounded-md';
+      d.innerHTML = `<div class="flex items-start justify-between gap-4"><div><div class="text-sm font-semibold">${a.alert_type || 'Alert'}</div><div class="text-sm muted">${msg}</div></div><div class="muted text-xs">${created}</div></div>`;
+      ac.appendChild(d);
+    });
+  }
+
+  // Predictions
+  const preds = data.predictions || [];
+  const pc = el('#predictionsContainer');
+  pc.innerHTML = '';
+  if (!preds.length) {
+    pc.innerHTML = '<div class="muted">No predictions available.</div>';
+  } else {
+    preds.slice(0,6).forEach(p => {
+      let thunder = p.thunderstorm_prob ?? 0;
+      let gale = p.gale_wind_prob ?? 0;
+      // If server returned 0..100 normalize
+      if (thunder > 1) thunder = thunder/100;
+      if (gale > 1) gale = gale/100;
+      let prob = Math.max(thunder, gale);
+      let label = (thunder >= gale) ? 'Thunderstorm' : 'GaleWind';
+      let level = prob >= 0.8 ? 'RED' : (prob >= 0.5 ? 'ORANGE' : 'GREEN');
+      let conf = p.confidence ?? 0;
+      let pct = Math.round(Math.min(1, prob) * 100);
+      const card = document.createElement('div');
+      card.className = 'p-3 border rounded-md bg-white';
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-sm font-semibold">${label}</div>
+            <div class="text-xs muted">${(p.airfield && p.airfield.name) || ''}</div>
+          </div>
+          <div class="text-sm font-semibold">${pct}%</div>
+        </div>
+        <div class="mt-2">
+          <div class="progress-bg"><div class="progress-fill" style="width:${pct}%; background: ${level==='RED'?'#ef4444':level==='ORANGE'?'#f97316':'#10b981'}"></div></div>
+          <div class="flex items-center justify-between mt-2 text-xs muted">
+            <div>Confidence: ${Math.round((conf||0)*100)}%</div>
+            <div>Horizon: ${p.created_at ? new Date(p.created_at).toLocaleTimeString() : '-'}</div>
+          </div>
+        </div>
+      `;
+      pc.appendChild(card);
+    });
+  }
+
+  // Data sources: support array or object
+  const ds = data.dataSources || {};
+  const dsDiv = el('#dataSources');
+  dsDiv.innerHTML = '';
+  if (Array.isArray(ds)) {
+    ds.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between p-2 rounded-md';
+      row.innerHTML = `<div class="text-sm font-medium">${s.name}</div><div class="muted text-sm">${s.status}</div>`;
+      dsDiv.appendChild(row);
+    });
+  } else if (Object.keys(ds).length > 0) {
+    Object.keys(ds).forEach(k => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between p-2 rounded-md';
+      row.innerHTML = `<div class="text-sm font-medium">${k}</div><div class="muted text-sm">${ds[k]}</div>`;
+      dsDiv.appendChild(row);
+    });
+  } else {
+    dsDiv.innerHTML = '<div class="muted">No data source info</div>';
+  }
+
+  // Weather summary robust
+  const w = data.weatherData || {};
+  const ws = el('#weatherSummary');
+  const temp = (typeof w.temperature !== 'undefined') ? Number(w.temperature).toFixed(2) : '—';
+  const hum = (typeof w.humidity !== 'undefined') ? Number(w.humidity).toFixed(1) : '—';
+  const pres = (typeof w.pressure !== 'undefined') ? Number(w.pressure).toFixed(2) : '—';
+  const windSpeed = (typeof w.windSpeed !== 'undefined') ? Number(w.windSpeed).toFixed(2) : '—';
+  const windDir = (typeof w.windDirection !== 'undefined') ? Number(w.windDirection).toFixed(0) : '—';
+  const radar = (typeof w.radarIntensity !== 'undefined') ? Number(w.radarIntensity).toFixed(2) : '—';
+  ws.innerHTML = `
+    <div class="text-sm">Temp: <span class="font-semibold">${temp} °C</span></div>
+    <div class="text-sm">Humidity: <span class="font-semibold">${hum}%</span></div>
+    <div class="text-sm">Pressure: <span class="font-semibold">${pres} hPa</span></div>
+    <div class="text-sm">Wind: <span class="font-semibold">${windSpeed} m/s</span> @ ${windDir}°</div>
+    <div class="text-sm">Radar intensity: <span class="font-semibold">${radar}</span></div>
+  `;
+
+  // Map focus (robust)
+  if (data.airfield && (data.airfield.latitude != null) && (data.airfield.longitude != null)) {
+    const lat = Number(data.airfield.latitude);
+    const lon = Number(data.airfield.longitude);
+    if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
+      const cur = map.getCenter();
+      const dist = Math.hypot(cur.lat - lat, cur.lng - lon);
+      if (dist > 0.01) map.setView([lat, lon], 8, { animate: true });
+    }
+  }
+
+  // Storm overlay
+  if (data.stormCells) {
+    if (stormsVisible) animateStorms(data.stormCells);
+  } else {
+    stormLayerGroup.clearLayers();
+  }
+
+  el('#predUpdate').textContent = new Date().toLocaleTimeString();
+
+  // update history chart
+  loadHistoryChart(currentAirfieldICAO || 'TEST');
+}
+
+/* Prediction history chart */
+async function loadHistoryChart(airfieldQuery){
+  const hours = 6;
+  const url = `/api/predictions/history/?airfield=${encodeURIComponent(airfieldQuery)}&hours=${hours}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('history fetch failed ' + r.status);
+    const j = await r.json();
+    const hist = j.history || j || [];
+    if (!Array.isArray(hist) || hist.length === 0) {
+      if (trendChart) { trendChart.destroy(); trendChart = null; }
+      return;
+    }
+    const labels = hist.map(h => new Date(h.created_at || h.timestamp || h.created).toLocaleTimeString());
+    const thunder = hist.map(h => {
+      let v = (h.thunderstorm_prob ?? h.thunder_prob ?? h.thunder ?? 0);
+      if (v > 1) v = v/100;
+      return Number(v);
+    });
+    const gale = hist.map(h => {
+      let v = (h.gale_wind_prob ?? h.gale_prob ?? h.gale ?? 0);
+      if (v > 1) v = v/100;
+      return Number(v);
+    });
+    drawTrendChart(labels, thunder, gale);
+  } catch(e) {
+    console.warn('history fetch failed', e);
+  }
+}
+
+function renderTrend(trendData) {
+  const ctx = document.getElementById("riskTrendChart").getContext("2d");
+  const labels = trendData.map(d => new Date(d.time).toLocaleTimeString());
+  const thunder = trendData.map(d => d.thunder * 100);
+  const gale = trendData.map(d => d.gale * 100);
+
+  new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Thunderstorm %",
+          data: thunder,
+          borderColor: "red",
+          fill: false
+        },
+        {
+          label: "Gale Wind %",
+          data: gale,
+          borderColor: "orange",
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { min: 0, max: 100, title: { display: true, text: "Risk %" } }
+      }
+    }
+  });
+}
+
+// When loading dashboard API:
+fetch(`/api/frontend/dashboard/?airfield=TEST`)
+  .then(r => r.json())
+  .then(data => {
+    if (data.trend) {
+      renderTrend(data.trend);
+    }
+  });
+
+/* ---------- Paste this snippet into your existing <script> (after other functions) ---------- */
+(async function () {
+  // Wait until Chart is available (Chart.js included in your page)
+  async function waitForChart(timeout = 5000) {
+    const start = Date.now();
+    while (typeof window.Chart === "undefined") {
+      if (Date.now() - start > timeout) throw new Error("Chart.js not found on page");
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return window.Chart;
+  }
+
+  // Dynamically load chartjs-plugin-zoom if not present
+  async function ensureZoomPlugin() {
+    if (window.Chart && window.Chart.registry && window.Chart.registry.getPlugin("zoom")) return;
+    // load plugin script
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.1.1/dist/chartjs-plugin-zoom.min.js";
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = (e) => reject(new Error("Failed to load chartjs-plugin-zoom"));
+      document.head.appendChild(s);
+    });
+    // plugin will auto-register in modern builds; nothing else needed
+  }
+
+  // Utility: normalize value (1 or 100 => 0..1)
+  function normalizeProb(v) {
+    if (v === null || typeof v === "undefined") return 0;
+    let n = Number(v);
+    if (Number.isNaN(n)) return 0;
+    if (n > 1.01) n = n / 100.0;
+    if (n < 0) n = 0;
+    if (n > 1) n = 1;
+    return n;
+  }
+
+  // Chart state
+  let trendChart = null;
+  const detailByIndex = {};
+
+  // Create detailed, interactive line chart
+  function drawTrendChart(labels, thunderArr, galeArr, detailsArr = []) {
+    // ensure arrays are same length
+    const L = Math.max(labels.length, thunderArr.length, galeArr.length);
+    const labelsP = labels.slice(-L);
+    const thunder = thunderArr.slice(-L).map(normalizeProb);
+    const gale = galeArr.slice(-L).map(normalizeProb);
+
+    // store details for tooltip footer / lookups
+    detailByIndex.__reset = () => { Object.keys(detailByIndex).forEach(k => delete detailByIndex[k]); };
+    detailByIndex.__reset();
+    for (let i = 0; i < detailsArr.length; i++) {
+      detailByIndex[i] = detailsArr[i] || {};
+    }
+
+    const ctx = document.getElementById("riskTrendChart");
+    if (!ctx) {
+      console.warn("riskTrendChart canvas not found");
+      return;
+    }
+
+    // destroy previous chart
+    if (trendChart) {
+      try { trendChart.destroy(); } catch (e) { /* ignore */ }
+      trendChart = null;
+    }
+
+    trendChart = new Chart(ctx.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labelsP,
+        datasets: [
+          {
+            label: "Thunderstorm %",
+            data: thunder.map(v => v * 100.0),
+            borderColor: "#ef4444",
+            backgroundColor: "rgba(239,68,68,0.08)",
+            fill: true, tension: 0.3,
+            pointRadius: 4, pointHoverRadius: 6
+          },
+          {
+            label: "Gale Wind %",
+            data: gale.map(v => v * 100.0),
+            borderColor: "#f97316",
+            backgroundColor: "rgba(249,115,22,0.08)",
+            fill: true, tension: 0.3,
+            pointRadius: 4, pointHoverRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "top" },
+          tooltip: {
+            mode: "index",
+            intersect: false,
+            callbacks: {
+              // title is label/time
+              title: function (items) {
+                if (!items || !items.length) return "";
+                return items[0].label || "";
+              },
+              label: function (item) {
+                // data is percent number
+                return `${item.dataset.label}: ${Number(item.raw).toFixed(0)} %`;
+              },
+              footer: function (items) {
+                if (!items || !items.length) return [];
+                const idx = items[0].dataIndex;
+                const d = detailByIndex[idx] || {};
+                const out = [];
+                // prefer keys commonly used in Prediction.details
+                if (typeof d.avg_temp !== "undefined") out.push(`Avg Temp: ${Number(d.avg_temp).toFixed(2)} °C`);
+                if (typeof d.avg_humidity !== "undefined") out.push(`Avg Humidity: ${Number(d.avg_humidity).toFixed(1)} %`);
+                if (typeof d.avg_pressure !== "undefined") out.push(`Avg Pressure: ${Number(d.avg_pressure).toFixed(2)} hPa`);
+                if (typeof d.max_gust !== "undefined") out.push(`Max Gust: ${Number(d.max_gust).toFixed(2)} m/s`);
+                if (typeof d.radar_intensity !== "undefined") out.push(`Radar intensity: ${Number(d.radar_intensity).toFixed(2)}`);
+                if (typeof d.confidence !== "undefined") out.push(`Confidence: ${(Number(d.confidence) * 100).toFixed(0)}%`);
+                if (out.length === 0 && Object.keys(d).length > 0) {
+                  // show a compact dump for any other keys
+                  Object.keys(d).forEach(k => {
+                    let v = d[k];
+                    if (typeof v === "number") v = (Math.abs(v) < 1 && v !== 0) ? v.toFixed(3) : v;
+                    out.push(`${k}: ${v}`);
+                  });
+                }
+                return out;
+              }
+            }
+          },
+          zoom: {
+            pan: { enabled: true, mode: "x", modifierKey: "ctrl" }, // allow ctrl-drag pan for precision
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" }
+          }
+        },
+        scales: {
+          y: {
+            min: 0,
+            max: 100,
+            title: { display: true, text: "Risk %" }
+          },
+          x: {
+            ticks: { maxRotation: 45, autoSkip: true }
+          }
+        }
+      }
+    });
+
+    // double-click to reset zoom
+    const canvas = ctx;
+    canvas.ondblclick = () => {
+      try { trendChart.resetZoom(); } catch (e) { /* ignore */ }
+    };
+  }
+
+  // Fetch history and call drawTrendChart
+  async function loadHistoryChart(airfieldQuery) {
+    if (!airfieldQuery) airfieldQuery = (window.currentAirfieldICAO || window.currentAirfieldId || "TEST");
+    const url = `/api/predictions/history/?airfield=${encodeURIComponent(airfieldQuery)}&hours=6`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("history fetch failed: " + resp.status);
+      const payload = await resp.json();
+      const hist = payload.history || payload || [];
+      if (!Array.isArray(hist) || hist.length === 0) {
+        // clear chart
+        if (trendChart) { try { trendChart.destroy(); } catch (e){}; trendChart = null; }
+        return;
+      }
+      // labels
+      const labels = hist.map(h => {
+        const t = h.created_at || h.timestamp || h.created;
+        try { return new Date(t).toLocaleTimeString(); } catch (e) { return String(t); }
+      });
+      // values may be 0..1 or 0..100
+      const thunder = hist.map(h => normalizeProb(h.thunderstorm_prob ?? h.thunder_prob ?? h.thunder ?? 0));
+      const gale = hist.map(h => normalizeProb(h.gale_wind_prob ?? h.gale_prob ?? h.gale ?? 0));
+      // extract details (if available) - try multiple possible locations
+      const detailsArr = hist.map(h => (h.details || h.meta || h) );
+      drawTrendChart(labels, thunder, gale, detailsArr);
+    } catch (err) {
+      console.warn("Failed to load prediction history:", err);
+    }
+  }
+
+  // Wait for Chart.js and zoom plugin then wire up global function and initial call
+  try {
+    await waitForChart();
+    await ensureZoomPlugin();
+  } catch (e) {
+    console.error("Chart dependencies missing:", e);
+    return;
+  }
+
+  // Expose loader so your existing code can call loadHistoryChart(...) after dashboard load
+  window._dashboardLoadHistoryChart = loadHistoryChart;
+
+  // If your page has a global variable 'currentAirfieldICAO' (your script uses that), call it once now:
+  try {
+    const q = window.currentAirfieldICAO || window.currentAirfieldId || "TEST";
+    // small delay to allow initial dashboard fetch to populate history if it runs concurrently
+    setTimeout(() => loadHistoryChart(q), 250);
+  } catch (e) { /* ignore */ }
+
+  // helpful debug
+  console.log("Interactive Risk Trend chart installed (zoom/pan/tooltip details).");
+})();
+
+
+
+/* Auto-refresh */
+function startAutoRefresh(){
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(async () => {
+    refreshCountdown--;
+    el('#autoRefresh').textContent = refreshCountdown;
+    if (refreshCountdown <= 0) {
+      await loadDashboard();
+      refreshCountdown = refreshSec;
+    }
+  }, 1000);
+}
+
+</script>
+</body>
+</html>

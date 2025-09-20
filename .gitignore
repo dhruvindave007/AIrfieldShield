@@ -11,14 +11,10 @@ venv/
 env/
 .venv/
 
-# Django stuff
+# Django
 /staticfiles/
-media/
-*.log
-
-# IDE
-.vscode/
-.idea/
+/media/
+/*.log
 
 # Models
 ai_models/trained/

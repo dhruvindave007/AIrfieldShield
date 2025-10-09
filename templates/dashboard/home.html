@@ -1,3 +1,4 @@
+<!-- templates/dashboard/home.html -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -14,6 +15,7 @@
 
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 
   <style>
     body { background: #f8fafc; }
@@ -184,12 +186,14 @@ async function populateAirfields(){
     }
     list.forEach(a => {
       const opt = document.createElement('option');
+      // prefer ICAO as the select value for query simplicity
       opt.value = a.icao || a.id || '';
       opt.textContent = `${a.name} (${a.icao || ''})`;
       sel.appendChild(opt);
     });
     sel.selectedIndex = 0;
-    currentAirfieldICAO = sel.options[sel.selectedIndex].value;
+    const first = sel.options[sel.selectedIndex];
+    currentAirfieldICAO = first.value;
   } catch (e) {
     console.warn('Failed to load airfields', e);
     const opt = document.createElement('option');
@@ -208,14 +212,19 @@ function initMap(){
   stormLayerGroup = L.layerGroup().addTo(map);
 }
 
-/* animateStorms: supports Point features and animates them */
+/* animateStorms: supports Point and Polygon features.
+   Points -> circle markers; Polygons -> polygon shapes.
+   Points drift using movement vector.
+*/
 function animateStorms(featureCollection) {
   stormLayerGroup.clearLayers();
   if (!featureCollection || !featureCollection.features) return;
 
+  // For points we keep them in an array to animate coords in-place
   const points = featureCollection.features.filter(f => f.geometry && f.geometry.type === 'Point');
   const polygons = featureCollection.features.filter(f => f.geometry && f.geometry.type === 'Polygon');
 
+  // render polygons statically
   polygons.forEach(f => {
     const latlngs = f.geometry.coordinates[0].map(pt => [pt[1], pt[0]]);
     L.polygon(latlngs, {
@@ -225,30 +234,39 @@ function animateStorms(featureCollection) {
     }).addTo(stormLayerGroup);
   });
 
+  // animated points: draw and then update positions on RAF loop
+  // convert to mutable items with velocity in degrees/sec
   const items = points.map(f => {
     const p = f.properties || {};
     const mv = p.movement || {direction: 0, speed_kmh: 0};
     const dirRad = (mv.direction || 0) * Math.PI/180;
-    const degPerSec = ((mv.speed_kmh || 0) / 3600) / 111;
+    const degPerSec = ((mv.speed_kmh || 0) / 3600) / 111; // approx deg lat/sec
     const dlat = degPerSec * Math.cos(dirRad);
-    const lat0 = (f.geometry.coordinates[1] || 0);
+    // approximate lon adjacency; we'll use lat of point
+    const lat0 = f.geometry.coordinates[1] || 0;
     const dlon = degPerSec * Math.sin(dirRad) / (Math.cos(lat0 * Math.PI/180) || 1);
     return { f, dlat, dlon };
   });
 
   let last = performance.now();
-  if (animateHandle) cancelAnimationFrame(animateHandle);
+  if (animateHandle) {
+    cancelAnimationFrame(animateHandle);
+    animateHandle = null;
+  }
 
   function step(now) {
     const dt = (now - last) / 1000.0;
     last = now;
 
+    // update positions
     items.forEach(item => {
       const geom = item.f.geometry;
-      geom.coordinates[1] += item.dlat * dt * 0.5;
+      if (!geom || geom.type !== 'Point') return;
+      geom.coordinates[1] += item.dlat * dt * 0.5; // scale a bit for pleasant speed
       geom.coordinates[0] += item.dlon * dt * 0.5;
     });
 
+    // clear and re-render points
     stormLayerGroup.clearLayers();
     polygons.forEach(f => {
       const latlngs = f.geometry.coordinates[0].map(pt => [pt[1], pt[0]]);
@@ -259,7 +277,7 @@ function animateStorms(featureCollection) {
       const p = f.properties || {};
       const [lon, lat] = f.geometry.coordinates;
       const color = p.type === 'Thunderstorm' ? '#7c3aed' : (p.type === 'GaleWind' ? '#f97316' : '#0ea5e9');
-      const radius = 10000 * Math.max(0.2, Math.min(1.5, (p.intensity || 0.5)));
+      const radius = 10000 * Math.max(0.2, Math.min(1.5, (p.intensity || 0.5))); // in meters
       const circle = L.circle([lat, lon], {
         radius,
         color,
@@ -270,7 +288,9 @@ function animateStorms(featureCollection) {
       circle.bindPopup(`<b>${p.type || 'Storm'}</b><br/>Intensity: ${p.intensity || 0}<br/>Moving ${p.movement?.direction || 0}° @ ${p.movement?.speed_kmh || 0} km/h`);
     });
 
-    if (stormsVisible) animateHandle = requestAnimationFrame(step);
+    if (stormsVisible) {
+      animateHandle = requestAnimationFrame(step);
+    }
   }
 
   last = performance.now();
@@ -358,6 +378,7 @@ function renderDashboard(data){
     preds.slice(0,6).forEach(p => {
       let thunder = p.thunderstorm_prob ?? 0;
       let gale = p.gale_wind_prob ?? 0;
+      // If server returned 0..100 normalize
       if (thunder > 1) thunder = thunder/100;
       if (gale > 1) gale = gale/100;
       let prob = Math.max(thunder, gale);
@@ -387,7 +408,7 @@ function renderDashboard(data){
     });
   }
 
-  // Data sources
+  // Data sources: support array or object
   const ds = data.dataSources || {};
   const dsDiv = el('#dataSources');
   dsDiv.innerHTML = '';
@@ -426,7 +447,7 @@ function renderDashboard(data){
     <div class="text-sm">Radar intensity: <span class="font-semibold">${radar}</span></div>
   `;
 
-  // Map focus
+  // Map focus (robust)
   if (data.airfield && (data.airfield.latitude != null) && (data.airfield.longitude != null)) {
     const lat = Number(data.airfield.latitude);
     const lon = Number(data.airfield.longitude);
@@ -446,267 +467,301 @@ function renderDashboard(data){
 
   el('#predUpdate').textContent = new Date().toLocaleTimeString();
 
-  // update history chart (explicitly await to ensure ordering)
+  // update history chart
   loadHistoryChart(currentAirfieldICAO || 'TEST');
 }
 
-/* Prediction history chart loader */
-/* --- REPLACE: loadHistoryChart + drawTrendChart (paste in place of existing functions) --- */
-
+/* Prediction history chart */
 async function loadHistoryChart(airfieldQuery){
   const hours = 6;
   const url = `/api/predictions/history/?airfield=${encodeURIComponent(airfieldQuery)}&hours=${hours}`;
-  let labels = [], thunder = [], gale = [];
-
-  // Try to fetch server history (no-store to avoid cached 404s)
   try {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (r.ok) {
-      const j = await r.json();
-      const hist = j.history || [];
-      if (Array.isArray(hist) && hist.length > 0) {
-        // parse times and values
-        labels = hist.map(h => {
-          try { return new Date(h.created_at || h.timestamp || h.created).toLocaleTimeString(); } catch(e) { return '-'; }
-        });
-        thunder = hist.map(h => {
-          let v = (h.thunderstorm_prob ?? h.thunder_prob ?? h.thunder ?? 0);
-          if (v > 1) v = v / 100;
-          return clamp(Math.round(Number(v) * 100), 0, 100);
-        });
-        gale = hist.map(h => {
-          let v = (h.gale_wind_prob ?? h.gale_prob ?? h.gale ?? 0);
-          if (v > 1) v = v / 100;
-          return clamp(Math.round(Number(v) * 100), 0, 100);
-        });
-
-        drawTrendChart(labels, thunder, gale);
-        return;
-      }
-      // if history array empty - fallthrough to fallback below
-    } else {
-      // 404 or other - we'll fallback to dashboard predictions
-      console.warn('history endpoint returned', r.status);
-    }
-  } catch (err) {
-    console.warn('history fetch failed', err);
-  }
-
-  // FALLBACK: If no history, use lastDashboard.predictions (if available)
-  try {
-    if (lastDashboard && Array.isArray(lastDashboard.predictions) && lastDashboard.predictions.length > 0) {
-      // take last up to 12 predictions (most recent first), reverse so time increases left-to-right
-      const preds = lastDashboard.predictions.slice(0, 12).reverse();
-      labels = preds.map(p => p.created_at ? new Date(p.created_at).toLocaleTimeString() : '-');
-      thunder = preds.map(p => {
-        let v = (p.thunderstorm_prob ?? p.thunder ?? 0);
-        if (v > 1) v = v / 100;
-        return clamp(Math.round(Number(v) * 100), 0, 100);
-      });
-      gale = preds.map(p => {
-        let v = (p.gale_wind_prob ?? p.gale ?? 0);
-        if (v > 1) v = v / 100;
-        return clamp(Math.round(Number(v) * 100), 0, 100);
-      });
-
-      drawTrendChart(labels, thunder, gale);
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('history fetch failed ' + r.status);
+    const j = await r.json();
+    const hist = j.history || j || [];
+    if (!Array.isArray(hist) || hist.length === 0) {
+      if (trendChart) { trendChart.destroy(); trendChart = null; }
       return;
     }
-  } catch (err) {
-    console.warn('fallback build from lastDashboard failed', err);
+    const labels = hist.map(h => new Date(h.created_at || h.timestamp || h.created).toLocaleTimeString());
+    const thunder = hist.map(h => {
+      let v = (h.thunderstorm_prob ?? h.thunder_prob ?? h.thunder ?? 0);
+      if (v > 1) v = v/100;
+      return Number(v);
+    });
+    const gale = hist.map(h => {
+      let v = (h.gale_wind_prob ?? h.gale_prob ?? h.gale ?? 0);
+      if (v > 1) v = v/100;
+      return Number(v);
+    });
+    drawTrendChart(labels, thunder, gale);
+  } catch(e) {
+    console.warn('history fetch failed', e);
   }
-
-  // If we get here: no history and no preds -> destroy chart and draw empty canvas message
-  if (trendChart) {
-    try { trendChart.destroy(); } catch(e) {}
-    trendChart = null;
-  }
-  // draw empty placeholder grid (Chart.js empty dataset, so you have grid + text)
-  drawTrendChart([''], [0], [0], { placeholderText: 'No prediction history available' });
 }
 
-/* small helper */
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function renderTrend(trendData) {
+  const ctx = document.getElementById("riskTrendChart").getContext("2d");
+  const labels = trendData.map(d => new Date(d.time).toLocaleTimeString());
+  const thunder = trendData.map(d => d.thunder * 100);
+  const gale = trendData.map(d => d.gale * 100);
 
-/* drawTrendChart: creates or updates Chart.js line chart.
-   Accepts optional opts: { placeholderText: 'No data' } to show center text when data is trivial.
-*/
-function drawTrendChart(labels, thunderData, galeData, opts = {}) {
-  const ctxEl = document.getElementById("riskTrendChart");
-  if (!ctxEl) return;
-  const ctx = ctxEl.getContext("2d");
-
-  // If the data is single zero and we want to show placeholder, set a neutral label
-  const showPlaceholder = opts.placeholderText && labels.length === 1 && (thunderData[0] === 0 && galeData[0] === 0);
-
-  // If chart exists - update it; otherwise create
-  if (trendChart) {
-    // update labels & datasets
-    trendChart.data.labels = labels;
-    if (trendChart.data.datasets && trendChart.data.datasets.length >= 2) {
-      trendChart.data.datasets[0].data = thunderData;
-      trendChart.data.datasets[1].data = galeData;
-    } else {
-      trendChart.data.datasets = [
-        { label: "Thunderstorm (%)", data: thunderData, tension: 0.25, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, borderColor: '#7c3aed', backgroundColor: '#7c3aed', fill: false, yAxisID: 'y' },
-        { label: "Gale Wind (%)", data: galeData, tension: 0.25, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, borderColor: '#f97316', backgroundColor: '#f97316', fill: false, yAxisID: 'y' }
-      ];
-    }
-    trendChart.options.plugins.centerText = showPlaceholder ? { text: opts.placeholderText } : null;
-    trendChart.update();
-    return;
-  }
-
-  // create new chart
-  const cfg = {
-    type: 'line',
+  new Chart(ctx, {
+    type: "line",
     data: {
       labels: labels,
       datasets: [
         {
-          label: "Thunderstorm (%)",
-          data: thunderData,
-          tension: 0.25,
-          borderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 6,
-          yAxisID: 'y',
-          fill: false,
-          borderColor: '#7c3aed',
-          backgroundColor: '#7c3aed'
+          label: "Thunderstorm %",
+          data: thunder,
+          borderColor: "red",
+          fill: false
         },
         {
-          label: "Gale Wind (%)",
-          data: galeData,
-          tension: 0.25,
-          borderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 6,
-          yAxisID: 'y',
-          fill: false,
-          borderColor: '#f97316',
-          backgroundColor: '#f97316'
+          label: "Gale Wind %",
+          data: gale,
+          borderColor: "orange",
+          fill: false
         }
       ]
     },
     options: {
-      interaction: { mode: 'nearest', axis: 'x', intersect: false },
-      plugins: {
-        tooltip: {
-          enabled: true,
-          mode: 'index',
-          intersect: false,
-          callbacks: {
-            label: function(context) {
-              const v = context.parsed.y;
-              return (context.dataset.label || '') + ': ' + (typeof v === 'number' ? v : '-') + '%';
+      responsive: true,
+      scales: {
+        y: { min: 0, max: 100, title: { display: true, text: "Risk %" } }
+      }
+    }
+  });
+}
+
+// When loading dashboard API:
+fetch(`/api/frontend/dashboard/?airfield=TEST`)
+  .then(r => r.json())
+  .then(data => {
+    if (data.trend) {
+      renderTrend(data.trend);
+    }
+  });
+
+/* ---------- Paste this snippet into your existing <script> (after other functions) ---------- */
+(async function () {
+  // Wait until Chart is available (Chart.js included in your page)
+  async function waitForChart(timeout = 5000) {
+    const start = Date.now();
+    while (typeof window.Chart === "undefined") {
+      if (Date.now() - start > timeout) throw new Error("Chart.js not found on page");
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return window.Chart;
+  }
+
+  // Dynamically load chartjs-plugin-zoom if not present
+  async function ensureZoomPlugin() {
+    if (window.Chart && window.Chart.registry && window.Chart.registry.getPlugin("zoom")) return;
+    // load plugin script
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.1.1/dist/chartjs-plugin-zoom.min.js";
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = (e) => reject(new Error("Failed to load chartjs-plugin-zoom"));
+      document.head.appendChild(s);
+    });
+    // plugin will auto-register in modern builds; nothing else needed
+  }
+
+  // Utility: normalize value (1 or 100 => 0..1)
+  function normalizeProb(v) {
+    if (v === null || typeof v === "undefined") return 0;
+    let n = Number(v);
+    if (Number.isNaN(n)) return 0;
+    if (n > 1.01) n = n / 100.0;
+    if (n < 0) n = 0;
+    if (n > 1) n = 1;
+    return n;
+  }
+
+  // Chart state
+  let trendChart = null;
+  const detailByIndex = {};
+
+  // Create detailed, interactive line chart
+  function drawTrendChart(labels, thunderArr, galeArr, detailsArr = []) {
+    // ensure arrays are same length
+    const L = Math.max(labels.length, thunderArr.length, galeArr.length);
+    const labelsP = labels.slice(-L);
+    const thunder = thunderArr.slice(-L).map(normalizeProb);
+    const gale = galeArr.slice(-L).map(normalizeProb);
+
+    // store details for tooltip footer / lookups
+    detailByIndex.__reset = () => { Object.keys(detailByIndex).forEach(k => delete detailByIndex[k]); };
+    detailByIndex.__reset();
+    for (let i = 0; i < detailsArr.length; i++) {
+      detailByIndex[i] = detailsArr[i] || {};
+    }
+
+    const ctx = document.getElementById("riskTrendChart");
+    if (!ctx) {
+      console.warn("riskTrendChart canvas not found");
+      return;
+    }
+
+    // destroy previous chart
+    if (trendChart) {
+      try { trendChart.destroy(); } catch (e) { /* ignore */ }
+      trendChart = null;
+    }
+
+    trendChart = new Chart(ctx.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labelsP,
+        datasets: [
+          {
+            label: "Thunderstorm %",
+            data: thunder.map(v => v * 100.0),
+            borderColor: "#ef4444",
+            backgroundColor: "rgba(239,68,68,0.08)",
+            fill: true, tension: 0.3,
+            pointRadius: 4, pointHoverRadius: 6
+          },
+          {
+            label: "Gale Wind %",
+            data: gale.map(v => v * 100.0),
+            borderColor: "#f97316",
+            backgroundColor: "rgba(249,115,22,0.08)",
+            fill: true, tension: 0.3,
+            pointRadius: 4, pointHoverRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "top" },
+          tooltip: {
+            mode: "index",
+            intersect: false,
+            callbacks: {
+              // title is label/time
+              title: function (items) {
+                if (!items || !items.length) return "";
+                return items[0].label || "";
+              },
+              label: function (item) {
+                // data is percent number
+                return `${item.dataset.label}: ${Number(item.raw).toFixed(0)} %`;
+              },
+              footer: function (items) {
+                if (!items || !items.length) return [];
+                const idx = items[0].dataIndex;
+                const d = detailByIndex[idx] || {};
+                const out = [];
+                // prefer keys commonly used in Prediction.details
+                if (typeof d.avg_temp !== "undefined") out.push(`Avg Temp: ${Number(d.avg_temp).toFixed(2)} °C`);
+                if (typeof d.avg_humidity !== "undefined") out.push(`Avg Humidity: ${Number(d.avg_humidity).toFixed(1)} %`);
+                if (typeof d.avg_pressure !== "undefined") out.push(`Avg Pressure: ${Number(d.avg_pressure).toFixed(2)} hPa`);
+                if (typeof d.max_gust !== "undefined") out.push(`Max Gust: ${Number(d.max_gust).toFixed(2)} m/s`);
+                if (typeof d.radar_intensity !== "undefined") out.push(`Radar intensity: ${Number(d.radar_intensity).toFixed(2)}`);
+                if (typeof d.confidence !== "undefined") out.push(`Confidence: ${(Number(d.confidence) * 100).toFixed(0)}%`);
+                if (out.length === 0 && Object.keys(d).length > 0) {
+                  // show a compact dump for any other keys
+                  Object.keys(d).forEach(k => {
+                    let v = d[k];
+                    if (typeof v === "number") v = (Math.abs(v) < 1 && v !== 0) ? v.toFixed(3) : v;
+                    out.push(`${k}: ${v}`);
+                  });
+                }
+                return out;
+              }
             }
+          },
+          zoom: {
+            pan: { enabled: true, mode: "x", modifierKey: "ctrl" }, // allow ctrl-drag pan for precision
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: "x" }
           }
         },
-        legend: { display: true, position: 'top' },
-        // custom center text plugin hook will be attached after creation
-      },
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          display: true,
-          title: { display: true, text: 'Time' }
-        },
-        y: {
-          display: true,
-          title: { display: true, text: 'Risk (%)' },
-          min: 0,
-          max: 100,
-          ticks: { stepSize: 10 }
+        scales: {
+          y: {
+            min: 0,
+            max: 100,
+            title: { display: true, text: "Risk %" }
+          },
+          x: {
+            ticks: { maxRotation: 45, autoSkip: true }
+          }
         }
       }
-    }
-  };
+    });
 
-  // create chart instance
-  trendChart = new Chart(ctx, cfg);
-
-  // optional: small plugin to show centered placeholder text when no meaningful data
-  Chart.register({
-    id: 'centerTextPlugin',
-    beforeDraw: (chart) => {
-      const center = chart.options.plugins.centerText;
-      if (!center || !center.text) return;
-      const ctxP = chart.ctx;
-      const width = chart.width;
-      const height = chart.height;
-      ctxP.save();
-      ctxP.font = '14px sans-serif';
-      ctxP.fillStyle = '#9ca3af';
-      ctxP.textAlign = 'center';
-      ctxP.textBaseline = 'middle';
-      ctxP.fillText(center.text, width / 2, height / 2);
-      ctxP.restore();
-    }
-  });
-
-  // apply placeholder if requested
-  if (showPlaceholder) {
-    trendChart.options.plugins.centerText = { text: opts.placeholderText };
-    trendChart.update();
-  }
-}
-
-/* --- end replacement --- */
-
-
-/* drawEmptyChart: keeps axes/grid visible and displays centered "No data" message */
-function drawEmptyChart() {
-  const canvas = document.getElementById("riskTrendChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-
-  if (trendChart) {
-    try { trendChart.destroy(); } catch(e) {}
-    trendChart = null;
+    // double-click to reset zoom
+    const canvas = ctx;
+    canvas.ondblclick = () => {
+      try { trendChart.resetZoom(); } catch (e) { /* ignore */ }
+    };
   }
 
-  // plugin draws centered message when there is no dataset
-  const centerMessage = {
-    id: 'centerMessage',
-    beforeDraw: (chart) => {
-      const hasData = Array.isArray(chart.data.datasets) && chart.data.datasets.some(ds => Array.isArray(ds.data) && ds.data.some(v => v != null));
-      if (!hasData) {
-        const { ctx, chartArea: {left, right, top, bottom, width, height} } = chart;
-        ctx.save();
-        ctx.fillStyle = '#6b7280';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = '14px system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial';
-        ctx.fillText('No prediction history available', left + width/2, top + height/2);
-        ctx.restore();
+  // Fetch history and call drawTrendChart
+  async function loadHistoryChart(airfieldQuery) {
+    if (!airfieldQuery) airfieldQuery = (window.currentAirfieldICAO || window.currentAirfieldId || "TEST");
+    const url = `/api/predictions/history/?airfield=${encodeURIComponent(airfieldQuery)}&hours=6`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("history fetch failed: " + resp.status);
+      const payload = await resp.json();
+      const hist = payload.history || payload || [];
+      if (!Array.isArray(hist) || hist.length === 0) {
+        // clear chart
+        if (trendChart) { try { trendChart.destroy(); } catch (e){}; trendChart = null; }
+        return;
       }
+      // labels
+      const labels = hist.map(h => {
+        const t = h.created_at || h.timestamp || h.created;
+        try { return new Date(t).toLocaleTimeString(); } catch (e) { return String(t); }
+      });
+      // values may be 0..1 or 0..100
+      const thunder = hist.map(h => normalizeProb(h.thunderstorm_prob ?? h.thunder_prob ?? h.thunder ?? 0));
+      const gale = hist.map(h => normalizeProb(h.gale_wind_prob ?? h.gale_prob ?? h.gale ?? 0));
+      // extract details (if available) - try multiple possible locations
+      const detailsArr = hist.map(h => (h.details || h.meta || h) );
+      drawTrendChart(labels, thunder, gale, detailsArr);
+    } catch (err) {
+      console.warn("Failed to load prediction history:", err);
     }
-  };
+  }
 
-  trendChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { display: true, title: { display: true, text: 'Time' } },
-        y: { display: true, title: { display: true, text: 'Risk (%)' }, min: 0, max: 100, ticks: { stepSize: 10 } }
-      },
-      plugins: { legend: { display: false } }
-    },
-    plugins: [centerMessage]
-  });
-}
+  // Wait for Chart.js and zoom plugin then wire up global function and initial call
+  try {
+    await waitForChart();
+    await ensureZoomPlugin();
+  } catch (e) {
+    console.error("Chart dependencies missing:", e);
+    return;
+  }
+
+  // Expose loader so your existing code can call loadHistoryChart(...) after dashboard load
+  window._dashboardLoadHistoryChart = loadHistoryChart;
+
+  // If your page has a global variable 'currentAirfieldICAO' (your script uses that), call it once now:
+  try {
+    const q = window.currentAirfieldICAO || window.currentAirfieldId || "TEST";
+    // small delay to allow initial dashboard fetch to populate history if it runs concurrently
+    setTimeout(() => loadHistoryChart(q), 250);
+  } catch (e) { /* ignore */ }
+
+  // helpful debug
+  console.log("Interactive Risk Trend chart installed (zoom/pan/tooltip details).");
+})();
+
+
 
 /* Auto-refresh */
 function startAutoRefresh(){
-  // reset timer
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshCountdown = refreshSec;
-  el('#autoRefresh').textContent = refreshCountdown;
   refreshTimer = setInterval(async () => {
     refreshCountdown--;
     el('#autoRefresh').textContent = refreshCountdown;

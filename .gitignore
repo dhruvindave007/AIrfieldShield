@@ -3,18 +3,27 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.db
-*.sqlite3
 
-# Virtual environment
+# Virtual env
 venv/
-env/
-.venv/
+.env/
 
 # Django
-/staticfiles/
+*.sqlite3
+db.sqlite3
 /media/
-/*.log
+staticfiles/
 
-# Models
+# AI models
 ai_models/trained/
+*.joblib
+*.h5
+*.keras
+*.pkl
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/

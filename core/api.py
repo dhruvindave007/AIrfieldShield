@@ -3,7 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from core.models import Airfield, Prediction
 from alerts.models import Alert
-import random, datetime
+from django.utils import timezone
+import random
 
 class DashboardFrontendAPIView(APIView):
     def get(self, request, *args, **kwargs):
@@ -17,12 +18,12 @@ class DashboardFrontendAPIView(APIView):
             return Response({"error": f"Airfield {q} not found"}, status=status.HTTP_404_NOT_FOUND)
 
         # latest predictions
-        preds = list(Prediction.objects.filter(airfield=airfield).order_by("-created_at")[:5].values())
+        preds = list(Prediction.objects.filter(airfield=airfield).order_by("-created_at")[:10].values())
 
         # alerts
         alerts = list(Alert.objects.filter(airfield=airfield, acknowledged=False).order_by("-created_at").values())
 
-        # simulate current weather
+        # simulate current weather (kept for demo - real ingestion should replace this)
         weather = {
             "temperature": round(random.uniform(25, 35), 2),
             "humidity": round(random.uniform(50, 95), 2),
@@ -64,21 +65,6 @@ class DashboardFrontendAPIView(APIView):
             {"name": "RadarFeed", "status": "ok"},
             {"name": "PredictionEngine", "status": "ok"},
         ]
-                # --- add trend (last 6h predictions) ---
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=6)
-        history_preds = Prediction.objects.filter(
-            airfield=airfield, created_at__gte=cutoff
-        ).order_by("created_at")
-
-        trend = [
-            {
-                "time": p.created_at.isoformat(),
-                "thunder": p.thunderstorm_prob or 0,
-                "gale": p.gale_wind_prob or 0,
-            }
-            for p in history_preds
-        ]
-
 
         return Response({
             "airfield": {
@@ -93,7 +79,6 @@ class DashboardFrontendAPIView(APIView):
             "weatherData": weather,
             "stormCells": storm_cells,
             "dataSources": sources,
-            "trend": trend,
         })
 
 
@@ -102,21 +87,21 @@ class PredictionHistoryAPIView(APIView):
         q = request.GET.get("airfield")
         hours = int(request.GET.get("hours", 6))
 
-        airfield = Airfield.objects.filter(icao__iexact=q).first() \
-                   or Airfield.objects.filter(name__iexact=q).first()
+        if not q:
+            return Response({"error": "Missing ?airfield="}, status=status.HTTP_400_BAD_REQUEST)
+
+        airfield = (
+            Airfield.objects.filter(icao__iexact=q).first()
+            or Airfield.objects.filter(name__iexact=q).first()
+        )
         if not airfield:
             return Response({"error": f"Airfield {q} not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
-        preds = Prediction.objects.filter(airfield=airfield, created_at__gte=cutoff).order_by("created_at")
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        preds = (
+            Prediction.objects.filter(airfield=airfield, created_at__gte=cutoff)
+            .order_by("created_at")
+            .values("created_at", "thunderstorm_prob", "gale_wind_prob")
+        )
 
-        history = [
-            {
-                "created_at": p.created_at,
-                "thunderstorm_prob": p.thunderstorm_prob,
-                "gale_wind_prob": p.gale_wind_prob,
-            }
-            for p in preds
-        ]
-
-        return Response({"airfield": airfield.icao, "history": history})
+        return Response({"airfield": airfield.icao, "history": list(preds)})

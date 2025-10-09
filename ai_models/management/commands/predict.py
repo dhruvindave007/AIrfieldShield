@@ -1,274 +1,178 @@
-#!/usr/bin/env python3
-"""
-Management command: predict
-Produces Prediction rows for each Airfield using either:
- - the trained ensemble artifacts in ai_models/trained/ (RF + LSTM + CNN + meta) if available
- - or fallback heuristic when models are absent
-Robust to a mix of artifact formats and missing components.
-"""
-from datetime import timezone
+# ai_models/management/commands/predict.py
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from core.models import Airfield, WeatherObservation, Prediction
 import numpy as np
-import os
+import math
 import joblib
-import logging
 from pathlib import Path
-from django.utils import timezone
-
-
-logger = logging.getLogger(__name__)
+import tensorflow as tf
 
 TRAINED_DIR = Path("ai_models/trained")
 
-# Try to import TensorFlow / Keras but tolerate absence
-try:
-    import tensorflow as tf
-    from tensorflow.keras.models import load_model as keras_load_model
-except Exception:
-    tf = None
-    keras_load_model = None
-
-def safe_load_joblib(path):
-    try:
-        return joblib.load(path)
-    except Exception as e:
-        logger.warning("Failed to load joblib %s: %s", path, e)
+# helper to safely load a Keras model saved in modern format
+def load_keras_model(path):
+    if not Path(path).exists():
         return None
-
-def safe_load_keras(path):
-    if keras_load_model is None:
-        return None
-    try:
-        return keras_load_model(path)
-    except Exception as e:
-        logger.warning("Failed to load keras model %s: %s", path, e)
-        return None
-
-def compute_tabular_from_obs(obs):
-    """
-    Build a tabular feature vector from a list of WeatherObservation objects (most recent first).
-    Returns numpy array of shape (feat_dim,)
-    """
-    temps = [o.temperature_c for o in obs if o.temperature_c is not None]
-    hums = [o.humidity for o in obs if o.humidity is not None]
-    press = [o.pressure_hpa for o in obs if o.pressure_hpa is not None]
-    wind = [o.wind_speed_ms for o in obs if o.wind_speed_ms is not None]
-    gust = [o.wind_gust_ms for o in obs if o.wind_gust_ms is not None]
-
-    def safe_stats(arr):
-        if not arr:
-            return [np.nan, np.nan, np.nan]
-        a = np.array(arr, dtype=np.float32)
-        return [float(np.nanmean(a)), float(np.nanstd(a)), float(np.nanmax(a))]
-
-    t_mean, t_std, t_max = safe_stats(temps)
-    h_mean, h_std, h_max = safe_stats(hums)
-    p_mean, p_std, p_max = safe_stats(press)
-    w_mean, w_std, w_max = safe_stats(wind)
-    g_mean, g_std, g_max = safe_stats(gust)
-
-    feats = np.array([
-        t_mean, t_std, t_max,
-        h_mean, h_std, h_max,
-        p_mean, p_std, p_max,
-        w_mean, w_std, w_max,
-        g_mean, g_std, g_max
-    ], dtype=np.float32)
-    # NaNs -> zeros (so models don't crash)
-    feats = np.nan_to_num(feats, nan=0.0, posinf=0.0, neginf=0.0)
-    return feats
-
-def build_sequence_from_obs(obs, seq_len=30):
-    """
-    Build (seq_len, obs_dim) sequence for LSTM from observations (most recent first).
-    If fewer than seq_len, pad with last value or zeros.
-    obs expected ordered desc by timestamp.
-    obs_dim := [temp, humidity, pressure, wind_speed, gust]
-    """
-    seq = []
-    for o in obs:
-        seq.append([
-            float(o.temperature_c) if o.temperature_c is not None else 0.0,
-            float(o.humidity) if o.humidity is not None else 0.0,
-            float(o.pressure_hpa) if o.pressure_hpa is not None else 0.0,
-            float(o.wind_speed_ms) if o.wind_speed_ms is not None else 0.0,
-            float(o.wind_gust_ms) if o.wind_gust_ms is not None else 0.0,
-        ])
-        if len(seq) >= seq_len:
-            break
-    # pad to seq_len
-    if len(seq) < seq_len:
-        if seq:
-            last = seq[-1]
-        else:
-            last = [0.0]*5
-        while len(seq) < seq_len:
-            seq.append(last)
-    return np.array(seq, dtype=np.float32)[::-1]  # reverse so oldest->newest
+    # no custom objects expected now
+    return tf.keras.models.load_model(str(path))
 
 class Command(BaseCommand):
-    help = "Run lightweight/ensemble predictions for all airfields"
+    help = "Run ensemble predictions for all airfields using trained artifacts"
 
     def add_arguments(self, parser):
-        parser.add_argument("--seq-len", type=int, default=30, help="Sequence length when using LSTM")
-        parser.add_argument("--force-heuristic", action="store_true", help="Always use heuristic, skip loading models")
+        parser.add_argument("--force-sim", action="store_true", help="If no observations, simulate predictions from fake aggregated values")
 
     def handle(self, *args, **options):
-        seq_len = options.get("seq_len", 30)
-        force_heuristic = options.get("force_heuristic", False)
+        self.stdout.write("🔮 Running ensemble predictions...")
 
-        self.stdout.write("🔮 Running predictions for all airfields...")
+        # load artifacts (gracefully)
+        rf_th_calib = None
+        rf_g_calib = None
+        meta_th = None
+        meta_g = None
+        lstm_th = None
+        cnn_th = None
 
-        # Discover artifacts
-        rf_th_path = TRAINED_DIR / "rf_thunder_calib.joblib"
-        rf_gale_path = TRAINED_DIR / "rf_gale_calib.joblib"
-        meta_th_path = TRAINED_DIR / "meta_thunder.joblib"
-        meta_gale_path = TRAINED_DIR / "meta_gale.joblib"
-        lstm_paths = [TRAINED_DIR / "lstm_thunder.keras", TRAINED_DIR / "lstm_thunder.h5"]
-        cnn_paths = [TRAINED_DIR / "cnn_thunder.keras", TRAINED_DIR / "cnn_thunder.h5"]
+        try:
+            rf_th_calib = joblib.load(str(TRAINED_DIR / "rf_thunder_calib.joblib"))
+            rf_g_calib = joblib.load(str(TRAINED_DIR / "rf_gale_calib.joblib"))
+            meta_th = joblib.load(str(TRAINED_DIR / "meta_thunder.joblib"))
+            meta_g = joblib.load(str(TRAINED_DIR / "meta_gale.joblib"))
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Warning: failed to load some joblib artifacts: {e}"))
 
-        rf_th = rf_gale = meta_th = meta_gale = None
-        lstm_th = cnn_th = None
+        # load keras models using modern API
+        try:
+            lstm_th = load_keras_model(TRAINED_DIR / "lstm_thunder.keras")
+            cnn_th = load_keras_model(TRAINED_DIR / "cnn_thunder.keras")
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"Warning: failed to load Keras models: {e}"))
 
-        if not force_heuristic:
-            if rf_th_path.exists():
-                rf_th = safe_load_joblib(str(rf_th_path))
-            if rf_gale_path.exists():
-                rf_gale = safe_load_joblib(str(rf_gale_path))
-            if meta_th_path.exists():
-                meta_th = safe_load_joblib(str(meta_th_path))
-            if meta_gale_path.exists():
-                meta_gale = safe_load_joblib(str(meta_gale_path))
-
-            # load keras models if present
-            for p in lstm_paths:
-                if p.exists():
-                    lstm_th = safe_load_keras(str(p))
-                    if lstm_th is not None:
-                        break
-            for p in cnn_paths:
-                if p.exists():
-                    cnn_th = safe_load_keras(str(p))
-                    if cnn_th is not None:
-                        break
-
-        if force_heuristic or (not any([rf_th, rf_gale, meta_th, meta_gale, lstm_th, cnn_th])):
-            self.stdout.write(self.style.NOTICE("No ensemble artifacts found (or forced heuristic). Falling back to heuristic predictor."))
-
-        # For each airfield build features from most recent observations
         for af in Airfield.objects.all():
-            obs_qs = WeatherObservation.objects.filter(station__airfield=af).order_by("-timestamp")[:max(30, seq_len)]
+            # get recent observations for this airfield
+            obs_qs = WeatherObservation.objects.filter(station__airfield=af).order_by("-timestamp")[:30]
             if not obs_qs.exists():
-                self.stdout.write(self.style.WARNING(f"No observations for {af.icao or af.name}, skipping"))
-                continue
+                if not options.get("force_sim"):
+                    self.stdout.write(self.style.WARNING(f"No observations for {af.icao}, skipping"))
+                    continue
+                # simulate an aggregate if forced
+                temps = [30.0]; hums = [70.0]; gusts=[8.0]
+            else:
+                temps = [o.temperature_c for o in obs_qs if o.temperature_c is not None]
+                hums = [o.humidity for o in obs_qs if o.humidity is not None]
+                gusts = [o.wind_gust_ms for o in obs_qs if o.wind_gust_ms is not None]
 
-            obs = list(obs_qs)
-            # tabular features
-            tab = compute_tabular_from_obs(obs)
-            # sequence for LSTM
-            seq = build_sequence_from_obs(obs, seq_len=seq_len)
-
-            # baseline heuristic
-            temps = [o.temperature_c for o in obs if o.temperature_c is not None]
-            hums = [o.humidity for o in obs if o.humidity is not None]
-            gusts = [o.wind_gust_ms for o in obs if o.wind_gust_ms is not None]
             avg_temp = float(np.mean(temps)) if temps else None
             avg_hum = float(np.mean(hums)) if hums else None
             max_gust = float(max(gusts)) if gusts else 0.0
 
-            heuristic_thunder = min(1.0, max(0.0, ((avg_hum or 50) - 50) / 50 + (0.02 * max_gust)))
-            heuristic_gale = min(1.0, max(0.0, (max_gust / 40.0)))
+            # Build tabular feature used by RF (must match training aggregates)
+            # temp mean, temp std, temp max, hum mean, hum std, press mean, press std, wind mean, wind max, peak gust
+            # Some fields (pressure) may not be available from obs, use reasonable defaults
+            press_vals = [o.pressure_hpa for o in obs_qs if getattr(o, "pressure_hpa", None) is not None]
+            press_mean = float(np.mean(press_vals)) if press_vals else 1005.0
+            press_std = float(np.std(press_vals)) if press_vals else 4.0
+            temp_std = float(np.std(temps)) if temps else 2.0
+            wind_mean = float(np.mean([o.wind_speed_ms for o in obs_qs if getattr(o, "wind_speed_ms", None) is not None])) if obs_qs else 5.0
+            wind_max = float(np.max([o.wind_speed_ms for o in obs_qs if getattr(o, "wind_speed_ms", None) is not None])) if obs_qs else 8.0
 
-            # ensemble predictions (start from None)
-            p_rf_th = p_rf_g = p_lstm_th = p_cnn_th = None
+            tab_feat = np.array([
+                avg_temp or 30.0,
+                temp_std,
+                (max(temps) if temps else (avg_temp or 30.0)),
+                avg_hum or 60.0,
+                float(np.std(hums)) if hums else 8.0,
+                press_mean,
+                press_std,
+                wind_mean,
+                wind_max,
+                max_gust
+            ], dtype=np.float32).reshape(1, -1)
 
-            # RF predictions
+            # RF probabilities (calibrated) if available
+            p_rf_th = rf_th_calib.predict_proba(tab_feat)[:, 1] if rf_th_calib is not None else np.array([0.0])
+            p_rf_g = rf_g_calib.predict_proba(tab_feat)[:, 1] if rf_g_calib is not None else np.array([0.0])
+
+            # LSTM / CNN inputs construction (use last 30 obs or padded)
+            seq_input = None
+            img_input = None
+            if obs_qs.exists():
+                # build seq of length 30, pad/truncate using most recent obs (descending order)
+                last_obs = list(obs_qs)[0:30]  # newest first
+                last_obs_rev = list(reversed(last_obs))  # oldest -> newest
+                seq = []
+                for o in last_obs_rev:
+                    seq.append([
+                        getattr(o, "temperature_c", 30.0) or 30.0,
+                        getattr(o, "humidity", 60.0) or 60.0,
+                        getattr(o, "pressure_hpa", 1005.0) or 1005.0,
+                        getattr(o, "wind_speed_ms", 5.0) or 5.0,
+                        getattr(o, "wind_gust_ms", 5.0) or 5.0,
+                    ])
+                # pad if needed at front with last-known values
+                while len(seq) < 30:
+                    seq.insert(0, seq[0] if seq else [30, 60, 1005, 5, 5])
+                seq_input = np.array(seq[-30:], dtype=np.float32).reshape(1, 30, 5)
+
+                # create tiny synthetic image from recent humidity/gust to feed CNN (simple radial intensity)
+                last_h = seq[-1][1]
+                last_g = seq[-1][4]
+                img = np.zeros((32, 32), dtype=np.float32)
+                cx, cy = 16, 16
+                sigma = 4.0 + (last_g / 10.0)
+                xs = np.arange(32)
+                ys = np.arange(32)[:, None]
+                g = np.exp(-((xs - cx)**2 + (ys - cy)**2) / (2*sigma**2))
+                img += (last_h / 100.0) * g
+                img = img / (img.max() + 1e-8)
+                img_input = img.reshape(1, 32, 32, 1).astype(np.float32)
+
+            # get predictions from three components (use fallback zeros)
+            rf_prob = float(p_rf_th[0]) if p_rf_th is not None else 0.0
+            lstm_prob = float(lstm_th.predict(seq_input).ravel()[0]) if (lstm_th is not None and seq_input is not None) else 0.0
+            cnn_prob = float(cnn_th.predict(img_input).ravel()[0]) if (cnn_th is not None and img_input is not None) else 0.0
+
+            # assemble meta features and predict meta probability (thunder)
+            meta_feat = np.array([[rf_prob, lstm_prob, cnn_prob]])
+            prob_th = meta_th.predict_proba(meta_feat)[:, 1][0] if meta_th is not None else rf_prob * 0.6 + lstm_prob * 0.2 + cnn_prob * 0.2
+
+            # gale prediction via RF calibrated + small meta if available
+            p_rf_g_val = float(p_rf_g[0]) if p_rf_g is not None else 0.0
             try:
-                if rf_th is not None:
-                    p_rf_th = float(rf_th.predict_proba(tab.reshape(1, -1))[:, 1])
-                if rf_gale is not None:
-                    p_rf_g = float(rf_gale.predict_proba(tab.reshape(1, -1))[:, 1])
-                else:
-                    p_rf_g = None
-            except Exception as e:
-                logger.warning("RF predict failed for %s: %s", af, e)
-                p_rf_th = p_rf_g = None
+                prob_g = meta_g.predict_proba(np.array([[p_rf_g_val]]))[:, 1][0] if meta_g is not None else p_rf_g_val
+            except Exception:
+                prob_g = p_rf_g_val
 
-            # LSTM
-            try:
-                if lstm_th is not None:
-                    p_lstm_th = float(lstm_th.predict(seq.reshape(1, seq.shape[0], seq.shape[1])).ravel()[0])
-            except Exception as e:
-                logger.warning("LSTM predict failed for %s: %s", af, e)
-                p_lstm_th = None
+            # confidence: combine model AUC proxies / fallback to 0.7
+            # here we use a simple heuristic: if any model contributed strongly, confidence up
+            conf = 0.6 + min(0.4, abs(prob_th - 0.5) * 0.8)  # heuristic scale 0.6..1.0
+            conf = round(float(min(1.0, max(0.0, conf))), 2)
 
-            # CNN -- build tiny synthetic image from last obs if model present
-            try:
-                if cnn_th is not None:
-                    last = seq[-1]
-                    hum = last[1]
-                    gust = last[4]
-                    img = np.zeros((32,32), dtype=np.float32)
-                    cx, cy = 16, 16
-                    sigma = 4.0
-                    xs = np.arange(32)
-                    ys = np.arange(32)[:,None]
-                    g = np.exp(-((xs-cx)**2 + (ys-cy)**2)/(2*sigma**2))
-                    intensity = min(1.0, max(0.0, (hum/100.0) * (1 + gust/30.0)))
-                    img = (intensity * g)[...,None].astype(np.float32)
-                    p_cnn_th = float(cnn_th.predict(img.reshape(1,32,32,1)).ravel()[0])
-            except Exception as e:
-                logger.warning("CNN predict failed for %s: %s", af, e)
-                p_cnn_th = None
+            # Round probabilities to 3 decimals
+            prob_th = float(round(prob_th, 3))
+            prob_g = float(round(prob_g, 3))
 
-            # Meta learner: combine RF/LSTM/CNN probabilities if available
-            final_th = None
-            try:
-                meta_feats = []
-                for v in (p_rf_th, p_lstm_th, p_cnn_th):
-                    meta_feats.append(float(v) if v is not None else float(heuristic_thunder))
-                if meta_th is not None:
-                    final_th = float(meta_th.predict_proba(np.array(meta_feats).reshape(1, -1))[:, 1])
-                else:
-                    vals = [x for x in [p_rf_th, p_lstm_th, p_cnn_th] if x is not None]
-                    final_th = float(np.mean(vals)) if vals else float(heuristic_thunder)
-            except Exception as e:
-                logger.warning("Meta predict failed for %s: %s", af, e)
-                final_th = float(heuristic_thunder)
-
-            # Gale final (prefer RF or heuristic)
-            final_gale = None
-            try:
-                if rf_gale is not None:
-                    final_gale = float(p_rf_g) if p_rf_g is not None else float(heuristic_gale)
-                else:
-                    final_gale = float(heuristic_gale)
-            except Exception as e:
-                logger.warning("Gale final calc failed for %s: %s", af, e)
-                final_gale = float(heuristic_gale)
-
-            # clamp and round
-            final_th = max(0.0, min(1.0, float(final_th)))
-            final_gale = max(0.0, min(1.0, float(final_gale)))
-
-            # Save Prediction (fixed: no duplicated kwargs)
+            # Save Prediction object
             pred = Prediction.objects.create(
                 airfield=af,
-                thunderstorm_prob=round(final_th, 3),
-                gale_wind_prob=round(final_gale, 3),
-                confidence=1.0,
-                created_at=timezone.now(),
+                thunderstorm_prob=prob_th,
+                gale_wind_prob=prob_g,
+                confidence=conf,
                 details={
                     "avg_temp": float(avg_temp) if avg_temp is not None else None,
                     "avg_humidity": float(avg_hum) if avg_hum is not None else None,
+                    "avg_pressure": float(press_mean),
                     "max_gust": float(max_gust),
-                    "src": {
-                        "rf_th": round(float(p_rf_th), 4) if p_rf_th is not None else None,
-                        "lstm_th": round(float(p_lstm_th), 4) if p_lstm_th is not None else None,
-                        "cnn_th": round(float(p_cnn_th), 4) if p_cnn_th is not None else None,
-                    }
-                }
+                    "rf_prob_th": float(round(rf_prob, 3)),
+                    "lstm_prob_th": float(round(lstm_prob, 3)),
+                    "cnn_prob_th": float(round(cnn_prob, 3)),
+                    "rf_prob_g": float(round(p_rf_g_val, 3)),
+                },
             )
-            self.stdout.write(self.style.SUCCESS(f"Saved Prediction {pred.id} for {af.icao or af.name} (Thunder {pred.thunderstorm_prob:.3f}, Gale {pred.gale_wind_prob:.3f})"))
-        self.stdout.write(self.style.SUCCESS("Done running predictions."))
+
+            self.stdout.write(self.style.SUCCESS(
+                f"Saved Prediction {pred.id} for {af.icao} (thunder={pred.thunderstorm_prob}, gale={pred.gale_wind_prob}, conf={pred.confidence})"
+            ))
+
+        self.stdout.write(self.style.SUCCESS("✅ All done."))

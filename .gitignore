@@ -1,21 +1,19 @@
-# Python
+# Python caches
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.sqlite3
 
-# Virtual Environment
+# Virtual env
 venv/
-.env/
 env/
+.env/
 
-# IDE / Editors
+# IDE
 .vscode/
 .idea/
-*.iml
 
-# Large trained models
+# Large trained models / artifacts
 ai_models/trained/
 *.joblib
 *.h5
@@ -23,11 +21,7 @@ ai_models/trained/
 *.pt
 *.bin
 
-# OS files
+# OS/other
 .DS_Store
 Thumbs.db
-
-# Logs and caches
 *.log
-*.tmp
-*.csv

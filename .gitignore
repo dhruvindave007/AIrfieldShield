@@ -45,3 +45,17 @@ ai_models/trained/
 __pycache__/
 *.pyc
 .DS_Store
+# Python venv
+venv/
+.env
+# models and trained artifacts
+ai_models/trained/
+*.joblib
+*.h5
+*.keras
+*.pt
+*.bin
+# OS / editor
+__pycache__/
+*.pyc
+.DS_Store

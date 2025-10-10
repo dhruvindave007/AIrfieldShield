@@ -3,18 +3,31 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.db
 *.sqlite3
 
-# Virtual environment
+# Virtual Environment
 venv/
-env/
-.venv/
+.env/
 
-# Django
-/staticfiles/
-/media/
-/*.log
+# Large trained models
+ai_models/trained/*.joblib
+ai_models/trained/*.keras
+ai_models/trained/*.h5
 
-# Models
-ai_models/trained/
+# TensorFlow binaries
+*.so
+*.dll
+*.dylib
+
+# Logs and cache
+*.log
+*.csv
+*.tmp
+
+# VSCode / PyCharm / IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -8,68 +8,26 @@ __pycache__/
 # Virtual Environment
 venv/
 .env/
+env/
 
-# Large trained models
-ai_models/trained/*.joblib
-ai_models/trained/*.keras
-ai_models/trained/*.h5
-
-# TensorFlow binaries
-*.so
-*.dll
-*.dylib
-
-# Logs and cache
-*.log
-*.csv
-*.tmp
-
-# VSCode / PyCharm / IDE
+# IDE / Editors
 .vscode/
 .idea/
+*.iml
+
+# Large trained models
+ai_models/trained/
+*.joblib
+*.h5
+*.keras
+*.pt
+*.bin
 
 # OS files
 .DS_Store
 Thumbs.db
-# Python venv
-venv/
-.env
-# models and trained artifacts
-ai_models/trained/
-*.joblib
-*.h5
-*.keras
-*.pt
-*.bin
-# OS / editor
-__pycache__/
-*.pyc
-.DS_Store
-# Python venv
-venv/
-.env
-# models and trained artifacts
-ai_models/trained/
-*.joblib
-*.h5
-*.keras
-*.pt
-*.bin
-# OS / editor
-__pycache__/
-*.pyc
-.DS_Store
-# Python venv
-venv/
-.env
-# models and trained artifacts
-ai_models/trained/
-*.joblib
-*.h5
-*.keras
-*.pt
-*.bin
-# OS / editor
-__pycache__/
-*.pyc
-.DS_Store
+
+# Logs
+*.log
+*.tmp
+*.csv

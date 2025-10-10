@@ -61,7 +61,7 @@ class DashboardFrontendAPIView(APIView):
 
         # mark data sources as OK
         sources = [
-            {"name": "WeatherAPI", "status": "ok"},
+            {"name": "Satellite", "status": "ok"},
             {"name": "RadarFeed", "status": "ok"},
             {"name": "PredictionEngine", "status": "ok"},
         ]

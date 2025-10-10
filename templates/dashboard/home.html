@@ -3,34 +3,133 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Airfield Weather Dashboard</title>
+  <title>Airfield Weather Dashboard | Nowcasting</title>
 
-  <!-- Tailwind CDN (dev use) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
-    body { background: #f8fafc; }
-    .card { background: white; border-radius: 12px; box-shadow: 0 6px 20px rgba(13, 38, 59, 0.06); }
-    #map { height: 460px; border-radius: 12px; }
-    .muted { color: #6b7280; }
-    .progress-bg { background: #eef2ff; border-radius: 999px; height: 12px; }
-    .progress-fill { height: 12px; border-radius: 999px; }
-  </style>
-</head>
-<body class="font-sans antialiased">
+    /* ============================================
+      THEME & FUTURISTIC STYLING
+      ============================================
+    */
 
-  <!-- HEADER -->
-  <header class="bg-white border-b">
-    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    :root {
+      /* Light Theme */
+      --bg-primary: #f1f5f9;
+      --bg-secondary: rgba(255, 255, 255, 0.65);
+      --bg-secondary-opaque: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --border-color: rgba(203, 213, 225, 0.5);
+      --accent-primary: #2563eb;
+      --accent-primary-hover: #1d4ed8;
+      --shadow-color: rgba(30, 41, 59, 0.08);
+
+      /* Chart Colors */
+      --chart-grid-color: rgba(0, 0, 0, 0.1);
+      --chart-label-color: #475569;
+      
+      /* Alert Colors */
+      --alert-red-bg: #fef2f2; --alert-red-border: #dc2626;
+      --alert-orange-bg: #fff7ed; --alert-orange-border: #f97316;
+      --alert-green-bg: #f0fdf4; --alert-green-border: #16a34a;
+    }
+
+    html.dark {
+      /* Dark Theme */
+      --bg-primary: #0b1120;
+      --bg-secondary: rgba(22, 32, 57, 0.5);
+      --bg-secondary-opaque: #162039;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --border-color: rgba(56, 78, 118, 0.5);
+      --accent-primary: #38bdf8;
+      --accent-primary-hover: #0ea5e9;
+      --shadow-color: rgba(0, 0, 0, 0.2);
+
+      /* Chart Colors */
+      --chart-grid-color: rgba(255, 255, 255, 0.1);
+      --chart-label-color: #94a3b8;
+      
+      /* Alert Colors */
+      --alert-red-bg: rgba(153, 27, 27, 0.2); --alert-red-border: #f87171;
+      --alert-orange-bg: rgba(194, 65, 12, 0.2); --alert-orange-border: #fb923c;
+      --alert-green-bg: rgba(21, 128, 61, 0.2); --alert-green-border: #4ade80;
+    }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      transition: background-color 0.3s ease, color 0.3s ease;
+      background-image:
+        linear-gradient(rgba(97, 97, 97, 0.02) 1px, transparent 1px),
+        linear-gradient(to right, rgba(119, 119, 119, 0.02) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    
+    .card {
+      background: var(--bg-secondary);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px 0 var(--shadow-color);
+      transition: background-color 0.3s ease, border-color 0.3s ease;
+    }
+
+    #map { height: 460px; border-radius: 12px; }
+    .muted { color: var(--text-secondary); }
+    .progress-bg { background: rgba(128, 128, 128, 0.2); border-radius: 999px; height: 10px; }
+    .progress-fill { height: 10px; border-radius: 999px; }
+
+    /* Themed Leaflet Map Tiles */
+    .leaflet-tile-pane { filter: brightness(1); }
+    html.dark .leaflet-tile-pane { filter: brightness(0.7) invert(1) contrast(0.9) hue-rotate(200deg) saturate(0.4); }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+    
+    /* Utility Overrides for Theme */
+    .themed-btn { background-color: var(--accent-primary); color: white; }
+    .themed-btn:hover { background-color: var(--accent-primary-hover); }
+    .themed-select { background-color: var(--bg-secondary-opaque); border-color: var(--border-color); }
+    
+    .alert-red { background-color: var(--alert-red-bg); border-left-color: var(--alert-red-border); }
+    .alert-orange { background-color: var(--alert-orange-bg); border-left-color: var(--alert-orange-border); }
+    .alert-green { background-color: var(--alert-green-bg); border-left-color: var(--alert-green-border); }
+  </style>
+
+  <script>
+    // Apply theme immediately from localStorage to prevent FOUC (Flash Of Unstyled Content)
+    (function() {
+      const theme = localStorage.getItem('theme') || 'dark'; // Default to dark
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+</head>
+<body class="antialiased">
+
+  <header class="sticky top-0 z-50 card m-4 mb-0">
+    <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <div class="w-10 h-10 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold">AW</div>
+        <div class="w-10 h-10 rounded-lg bg-gray-500/10 flex items-center justify-center text-[var(--accent-primary)]">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M14.074 9.426c.92 -.21 1.932 -.21 2.926 0" /><path d="M16.923 10.999a5 5 0 0 1 0 2" /><path d="M17 14.5c-.96 .21 -2.016 .22 -3 0" /></svg>
+        </div>
         <div>
           <div class="text-lg font-semibold">Airfield Weather Dashboard</div>
           <div class="text-sm muted">Nowcasting · Alerts · Predictions · Storm overlays</div>
@@ -39,42 +138,41 @@
 
       <div class="flex items-center gap-4">
         <div class="flex items-center gap-2">
-          <label class="muted text-sm">Airfield</label>
-          <select id="airfieldSelect" class="px-3 py-1 border rounded-md bg-white"></select>
+          <label class="muted text-sm font-medium">Airfield</label>
+          <select id="airfieldSelect" class="px-3 py-1.5 border rounded-md themed-select"></select>
         </div>
-        <button id="refreshBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Refresh</button>
+        <button id="refreshBtn" class="px-4 py-2 themed-btn rounded-md transition-colors">Refresh</button>
+        <button id="themeToggleBtn" class="w-10 h-10 rounded-md flex items-center justify-center bg-gray-500/10 hover:bg-gray-500/20 transition-colors">
+            <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            <svg id="moonIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+        </button>
       </div>
     </div>
   </header>
 
-  <!-- MAIN GRID -->
-  <main class="max-w-7xl mx-auto px-6 py-6 grid grid-cols-3 gap-6">
+  <main class="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-    <!-- LEFT: Alerts / Predictions / Data Sources -->
     <div class="col-span-1 space-y-6">
-      <!-- Alerts -->
       <div class="card p-4">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">Active Alerts</h2>
           <div class="muted text-sm" id="alertsCount">—</div>
         </div>
-        <div id="alertsContainer" class="mt-3 space-y-3">
+        <div id="alertsContainer" class="mt-3 space-y-3 max-h-[250px] overflow-y-auto pr-2">
           <div class="muted">Loading alerts...</div>
         </div>
       </div>
 
-      <!-- Predictions -->
       <div class="card p-4">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">Latest Predictions</h2>
           <div class="muted text-sm">Updated: <span id="predUpdate">—</span></div>
         </div>
-        <div id="predictionsContainer" class="mt-3 space-y-3">
+        <div id="predictionsContainer" class="mt-3 space-y-3 max-h-[380px] overflow-y-auto pr-2">
           <div class="muted">Loading predictions...</div>
         </div>
       </div>
 
-      <!-- Data sources -->
       <div class="card p-4">
         <h2 class="text-lg font-semibold">Data Sources</h2>
         <div id="dataSources" class="mt-3 grid gap-2">
@@ -83,35 +181,32 @@
       </div>
     </div>
 
-    <!-- RIGHT (wider): Map + Charts -->
-    <div class="col-span-2 space-y-6">
-      <!-- Map card -->
+    <div class="col-span-1 lg:col-span-2 space-y-6">
       <div class="card p-4">
         <div class="flex items-start justify-between">
           <div>
             <h2 class="text-lg font-semibold">Storm Activity Map</h2>
-            <div class="muted text-sm">Circular markers = storm centers; intensity controls radius/opac.</div>
+            <div class="muted text-sm">Real-time storm cell tracking and intensity visualization.</div>
           </div>
           <div class="muted text-sm">Auto-refresh: <span id="autoRefresh">10</span>s</div>
         </div>
 
         <div id="map" class="mt-4"></div>
 
-        <div class="mt-4 flex gap-3">
-          <div class="flex items-center gap-2 px-3 py-2 rounded-md border bg-white">
-            <span class="w-3 h-3 bg-purple-600 rounded-full inline-block"></span> Thunderstorm
+        <div class="mt-4 flex flex-wrap gap-3">
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border" style="border-color: var(--border-color); background-color: rgba(124, 58, 237, 0.1);">
+            <span class="w-3 h-3 bg-purple-500 rounded-full inline-block"></span> <span class="text-sm">Thunderstorm</span>
           </div>
-          <div class="flex items-center gap-2 px-3 py-2 rounded-md border bg-white">
-            <span class="w-3 h-3 bg-orange-500 rounded-full inline-block"></span> GaleWind
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border" style="border-color: var(--border-color); background-color: rgba(249, 115, 22, 0.1);">
+            <span class="w-3 h-3 bg-orange-500 rounded-full inline-block"></span> <span class="text-sm">Gale Wind</span>
           </div>
-          <div class="flex items-center gap-2 px-3 py-2 rounded-md border bg-white">
-            <span class="w-3 h-3 bg-sky-500 rounded-full inline-block"></span> RainShower
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-full border" style="border-color: var(--border-color); background-color: rgba(14, 165, 233, 0.1);">
+            <span class="w-3 h-3 bg-sky-500 rounded-full inline-block"></span> <span class="text-sm">Rain Shower</span>
           </div>
         </div>
       </div>
 
-      <!-- Bottom cards: Chart + Weather summary -->
-      <div class="card p-4 grid grid-cols-2 gap-4">
+      <div class="card p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <h3 class="font-semibold">Risk Trend (6h)</h3>
           <div class="mt-2" style="height:220px;">
@@ -125,8 +220,8 @@
           <div class="mt-4">
             <h4 class="font-medium">Map Controls</h4>
             <div class="mt-2 flex gap-2">
-              <button id="zoomToAirfield" class="px-3 py-2 bg-slate-100 rounded-md">Zoom to Airfield</button>
-              <button id="toggleStorms" class="px-3 py-2 bg-slate-100 rounded-md">Toggle Storms</button>
+              <button id="zoomToAirfield" class="px-3 py-2 bg-gray-500/10 hover:bg-gray-500/20 rounded-md transition-colors">Zoom to Airfield</button>
+              <button id="toggleStorms" class="px-3 py-2 bg-gray-500/10 hover:bg-gray-500/20 rounded-md transition-colors">Toggle Storms</button>
             </div>
           </div>
         </div>
@@ -134,8 +229,7 @@
     </div>
   </main>
 
-  <!-- Minimal footer -->
-  <footer class="max-w-7xl mx-auto px-6 py-4 text-sm muted">
+  <footer class="max-w-7xl mx-auto px-6 py-4 text-sm muted text-center">
     <div>Prototype · AI/ML Nowcasting — simulated data for visualization</div>
   </footer>
 
@@ -147,6 +241,7 @@ let refreshSec = DEFAULT_REFRESH;
 let refreshCountdown = refreshSec;
 let refreshTimer = null;
 let map = null;
+let tileLayer = null;
 let stormLayerGroup = null;
 let animateHandle = null;
 let trendChart = null;
@@ -156,15 +251,50 @@ let stormsVisible = true;
 let lastDashboard = null;
 
 function el(q){return document.querySelector(q)}
-function elAll(q){return Array.from(document.querySelectorAll(q))}
 
 document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
   await populateAirfields();
   initMap();
   bindControls();
   startAutoRefresh();
   await loadDashboard();
 });
+
+// ========================
+// THEME MANAGEMENT
+// ========================
+function initTheme() {
+  const themeToggleBtn = el('#themeToggleBtn');
+  const sunIcon = el('#sunIcon');
+  const moonIcon = el('#moonIcon');
+
+  function updateIcons(theme) {
+    if (theme === 'dark') {
+      sunIcon.style.display = 'block';
+      moonIcon.style.display = 'none';
+    } else {
+      sunIcon.style.display = 'none';
+      moonIcon.style.display = 'block';
+    }
+  }
+
+  themeToggleBtn.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.toggle('dark');
+    const newTheme = isDark ? 'dark' : 'light';
+    localStorage.setItem('theme', newTheme);
+    updateIcons(newTheme);
+    // Reload chart with new theme colors
+    loadHistoryChart(currentAirfieldICAO || 'TEST');
+  });
+
+  // Set initial icon state
+  updateIcons(localStorage.getItem('theme') || 'dark');
+}
+
+// ========================
+// INITIALIZATION
+// ========================
 
 async function populateAirfields(){
   const sel = el('#airfieldSelect');
@@ -202,108 +332,16 @@ async function populateAirfields(){
 
 function initMap(){
   map = L.map('map', { zoomControl: true }).setView([23.02, 72.57], 7);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  tileLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '© OpenStreetMap contributors'
   }).addTo(map);
   stormLayerGroup = L.layerGroup().addTo(map);
 }
 
-/* animateStorms: supports Point features and animates them */
-function animateStorms(featureCollection) {
-  stormLayerGroup.clearLayers();
-  if (!featureCollection || !featureCollection.features) return;
+// ========================
+// DATA LOADING & RENDERING
+// ========================
 
-  const points = featureCollection.features.filter(f => f.geometry && f.geometry.type === 'Point');
-  const polygons = featureCollection.features.filter(f => f.geometry && f.geometry.type === 'Polygon');
-
-  polygons.forEach(f => {
-    const latlngs = f.geometry.coordinates[0].map(pt => [pt[1], pt[0]]);
-    L.polygon(latlngs, {
-      color: '#7c3aed',
-      weight: 2,
-      fillOpacity: Math.max(0.05, Math.min(0.9, f.properties.intensity || 0.4))
-    }).addTo(stormLayerGroup);
-  });
-
-  const items = points.map(f => {
-    const p = f.properties || {};
-    const mv = p.movement || {direction: 0, speed_kmh: 0};
-    const dirRad = (mv.direction || 0) * Math.PI/180;
-    const degPerSec = ((mv.speed_kmh || 0) / 3600) / 111;
-    const dlat = degPerSec * Math.cos(dirRad);
-    const lat0 = (f.geometry.coordinates[1] || 0);
-    const dlon = degPerSec * Math.sin(dirRad) / (Math.cos(lat0 * Math.PI/180) || 1);
-    return { f, dlat, dlon };
-  });
-
-  let last = performance.now();
-  if (animateHandle) cancelAnimationFrame(animateHandle);
-
-  function step(now) {
-    const dt = (now - last) / 1000.0;
-    last = now;
-
-    items.forEach(item => {
-      const geom = item.f.geometry;
-      geom.coordinates[1] += item.dlat * dt * 0.5;
-      geom.coordinates[0] += item.dlon * dt * 0.5;
-    });
-
-    stormLayerGroup.clearLayers();
-    polygons.forEach(f => {
-      const latlngs = f.geometry.coordinates[0].map(pt => [pt[1], pt[0]]);
-      L.polygon(latlngs, { color: '#7c3aed', weight: 2, fillOpacity: Math.max(0.05, Math.min(0.9, f.properties.intensity || 0.4)) }).addTo(stormLayerGroup);
-    });
-    items.forEach(item => {
-      const f = item.f;
-      const p = f.properties || {};
-      const [lon, lat] = f.geometry.coordinates;
-      const color = p.type === 'Thunderstorm' ? '#7c3aed' : (p.type === 'GaleWind' ? '#f97316' : '#0ea5e9');
-      const radius = 10000 * Math.max(0.2, Math.min(1.5, (p.intensity || 0.5)));
-      const circle = L.circle([lat, lon], {
-        radius,
-        color,
-        weight: 1,
-        fillColor: color,
-        fillOpacity: 0.12 + (p.intensity || 0.4) * 0.6
-      }).addTo(stormLayerGroup);
-      circle.bindPopup(`<b>${p.type || 'Storm'}</b><br/>Intensity: ${p.intensity || 0}<br/>Moving ${p.movement?.direction || 0}° @ ${p.movement?.speed_kmh || 0} km/h`);
-    });
-
-    if (stormsVisible) animateHandle = requestAnimationFrame(step);
-  }
-
-  last = performance.now();
-  animateHandle = requestAnimationFrame(step);
-}
-
-/* Controls & bindings */
-function bindControls(){
-  el('#airfieldSelect').addEventListener('change', async (ev) => {
-    currentAirfieldICAO = ev.target.value;
-    await loadDashboard();
-  });
-
-  el('#refreshBtn').addEventListener('click', async () => { await loadDashboard(); });
-
-  el('#zoomToAirfield').addEventListener('click', () => {
-    if (lastDashboard && lastDashboard.airfield && lastDashboard.airfield.latitude && lastDashboard.airfield.longitude) {
-      map.setView([ lastDashboard.airfield.latitude, lastDashboard.airfield.longitude ], 10, { animate: true });
-    }
-  });
-
-  el('#toggleStorms').addEventListener('click', () => {
-    stormsVisible = !stormsVisible;
-    if (!stormsVisible) {
-      stormLayerGroup.clearLayers();
-      if (animateHandle) { cancelAnimationFrame(animateHandle); animateHandle = null; }
-    } else if (lastDashboard && lastDashboard.stormCells) {
-      animateStorms(lastDashboard.stormCells);
-    }
-  });
-}
-
-/* Dashboard load & render */
 async function loadDashboard(){
   el('#alertsContainer').innerHTML = '<div class="muted">Loading alerts...</div>';
   el('#predictionsContainer').innerHTML = '<div class="muted">Loading predictions...</div>';
@@ -338,12 +376,12 @@ function renderDashboard(data){
   } else {
     alerts.slice(0, 8).forEach(a => {
       const level = a.level || 'ORANGE';
-      const cls = level === 'RED' ? 'bg-red-50 border-l-4 border-red-600' : (level === 'ORANGE' ? 'bg-orange-50 border-l-4 border-orange-500' : 'bg-green-50 border-l-4 border-green-600');
+      const cls = level === 'RED' ? 'alert-red' : (level === 'ORANGE' ? 'alert-orange' : 'alert-green');
       const msg = a.message || '';
       const created = a.created_at ? new Date(a.created_at).toLocaleString() : '';
       const d = document.createElement('div');
-      d.className = cls + ' p-3 rounded-md';
-      d.innerHTML = `<div class="flex items-start justify-between gap-4"><div><div class="text-sm font-semibold">${a.alert_type || 'Alert'}</div><div class="text-sm muted">${msg}</div></div><div class="muted text-xs">${created}</div></div>`;
+      d.className = cls + ' p-3 border-l-4 rounded-md';
+      d.innerHTML = `<div class="flex items-start justify-between gap-4"><div><div class="text-sm font-semibold">${a.alert_type || 'Alert'}</div><div class="text-sm muted">${msg}</div></div><div class="muted text-xs whitespace-nowrap">${created}</div></div>`;
       ac.appendChild(d);
     });
   }
@@ -358,15 +396,16 @@ function renderDashboard(data){
     preds.slice(0,6).forEach(p => {
       let thunder = p.thunderstorm_prob ?? 0;
       let gale = p.gale_wind_prob ?? 0;
-      if (thunder > 1) thunder = thunder/100;
-      if (gale > 1) gale = gale/100;
+      if (thunder > 1) thunder /= 100;
+      if (gale > 1) gale /= 100;
       let prob = Math.max(thunder, gale);
-      let label = (thunder >= gale) ? 'Thunderstorm' : 'GaleWind';
+      let label = (thunder >= gale) ? 'Thunderstorm' : 'Gale Wind';
       let level = prob >= 0.8 ? 'RED' : (prob >= 0.5 ? 'ORANGE' : 'GREEN');
       let conf = p.confidence ?? 0;
       let pct = Math.round(Math.min(1, prob) * 100);
       const card = document.createElement('div');
-      card.className = 'p-3 border rounded-md bg-white';
+      card.className = 'p-3 border rounded-md';
+      card.style.borderColor = 'var(--border-color)';
       card.innerHTML = `
         <div class="flex items-center justify-between">
           <div>
@@ -391,50 +430,38 @@ function renderDashboard(data){
   const ds = data.dataSources || {};
   const dsDiv = el('#dataSources');
   dsDiv.innerHTML = '';
-  if (Array.isArray(ds)) {
+  if (Array.isArray(ds) && ds.length > 0) {
     ds.forEach(s => {
+      const statusColor = s.status === 'OK' ? '#22c55e' : (s.status === 'DEGRADED' ? '#f59e0b' : '#ef4444');
       const row = document.createElement('div');
       row.className = 'flex items-center justify-between p-2 rounded-md';
-      row.innerHTML = `<div class="text-sm font-medium">${s.name}</div><div class="muted text-sm">${s.status}</div>`;
-      dsDiv.appendChild(row);
-    });
-  } else if (Object.keys(ds).length > 0) {
-    Object.keys(ds).forEach(k => {
-      const row = document.createElement('div');
-      row.className = 'flex items-center justify-between p-2 rounded-md';
-      row.innerHTML = `<div class="text-sm font-medium">${k}</div><div class="muted text-sm">${ds[k]}</div>`;
+      row.innerHTML = `<div class="text-sm font-medium">${s.name}</div><div class="text-sm font-semibold" style="color:${statusColor};">${s.status}</div>`;
       dsDiv.appendChild(row);
     });
   } else {
     dsDiv.innerHTML = '<div class="muted">No data source info</div>';
   }
 
-  // Weather summary robust
+  // Weather summary
   const w = data.weatherData || {};
   const ws = el('#weatherSummary');
-  const temp = (typeof w.temperature !== 'undefined') ? Number(w.temperature).toFixed(2) : '—';
+  const temp = (typeof w.temperature !== 'undefined') ? Number(w.temperature).toFixed(1) : '—';
   const hum = (typeof w.humidity !== 'undefined') ? Number(w.humidity).toFixed(1) : '—';
-  const pres = (typeof w.pressure !== 'undefined') ? Number(w.pressure).toFixed(2) : '—';
-  const windSpeed = (typeof w.windSpeed !== 'undefined') ? Number(w.windSpeed).toFixed(2) : '—';
+  const pres = (typeof w.pressure !== 'undefined') ? Number(w.pressure).toFixed(1) : '—';
+  const windSpeed = (typeof w.windSpeed !== 'undefined') ? Number(w.windSpeed).toFixed(1) : '—';
   const windDir = (typeof w.windDirection !== 'undefined') ? Number(w.windDirection).toFixed(0) : '—';
-  const radar = (typeof w.radarIntensity !== 'undefined') ? Number(w.radarIntensity).toFixed(2) : '—';
   ws.innerHTML = `
-    <div class="text-sm">Temp: <span class="font-semibold">${temp} °C</span></div>
-    <div class="text-sm">Humidity: <span class="font-semibold">${hum}%</span></div>
-    <div class="text-sm">Pressure: <span class="font-semibold">${pres} hPa</span></div>
-    <div class="text-sm">Wind: <span class="font-semibold">${windSpeed} m/s</span> @ ${windDir}°</div>
-    <div class="text-sm">Radar intensity: <span class="font-semibold">${radar}</span></div>
+    <div class="text-sm flex justify-between"><span>Temperature:</span> <span class="font-semibold">${temp} °C</span></div>
+    <div class="text-sm flex justify-between"><span>Humidity:</span> <span class="font-semibold">${hum}%</span></div>
+    <div class="text-sm flex justify-between"><span>Pressure:</span> <span class="font-semibold">${pres} hPa</span></div>
+    <div class="text-sm flex justify-between"><span>Wind:</span> <span class="font-semibold">${windSpeed} m/s @ ${windDir}°</span></div>
   `;
 
   // Map focus
   if (data.airfield && (data.airfield.latitude != null) && (data.airfield.longitude != null)) {
     const lat = Number(data.airfield.latitude);
     const lon = Number(data.airfield.longitude);
-    if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
-      const cur = map.getCenter();
-      const dist = Math.hypot(cur.lat - lat, cur.lng - lon);
-      if (dist > 0.01) map.setView([lat, lon], 8, { animate: true });
-    }
+    if (!isNaN(lat) && !isNaN(lon)) map.setView([lat, lon], 8, { animate: true });
   }
 
   // Storm overlay
@@ -445,265 +472,39 @@ function renderDashboard(data){
   }
 
   el('#predUpdate').textContent = new Date().toLocaleTimeString();
-
-  // update history chart (explicitly await to ensure ordering)
   loadHistoryChart(currentAirfieldICAO || 'TEST');
 }
 
-/* Prediction history chart loader */
-/* --- REPLACE: loadHistoryChart + drawTrendChart (paste in place of existing functions) --- */
+// ========================
+// CONTROLS & BINDINGS
+// ========================
 
-async function loadHistoryChart(airfieldQuery){
-  const hours = 6;
-  const url = `/api/predictions/history/?airfield=${encodeURIComponent(airfieldQuery)}&hours=${hours}`;
-  let labels = [], thunder = [], gale = [];
+function bindControls(){
+  el('#airfieldSelect').addEventListener('change', async (ev) => {
+    currentAirfieldICAO = ev.target.value;
+    await loadDashboard();
+  });
 
-  // Try to fetch server history (no-store to avoid cached 404s)
-  try {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (r.ok) {
-      const j = await r.json();
-      const hist = j.history || [];
-      if (Array.isArray(hist) && hist.length > 0) {
-        // parse times and values
-        labels = hist.map(h => {
-          try { return new Date(h.created_at || h.timestamp || h.created).toLocaleTimeString(); } catch(e) { return '-'; }
-        });
-        thunder = hist.map(h => {
-          let v = (h.thunderstorm_prob ?? h.thunder_prob ?? h.thunder ?? 0);
-          if (v > 1) v = v / 100;
-          return clamp(Math.round(Number(v) * 100), 0, 100);
-        });
-        gale = hist.map(h => {
-          let v = (h.gale_wind_prob ?? h.gale_prob ?? h.gale ?? 0);
-          if (v > 1) v = v / 100;
-          return clamp(Math.round(Number(v) * 100), 0, 100);
-        });
+  el('#refreshBtn').addEventListener('click', async () => { await loadDashboard(); });
 
-        drawTrendChart(labels, thunder, gale);
-        return;
-      }
-      // if history array empty - fallthrough to fallback below
-    } else {
-      // 404 or other - we'll fallback to dashboard predictions
-      console.warn('history endpoint returned', r.status);
-    }
-  } catch (err) {
-    console.warn('history fetch failed', err);
-  }
-
-  // FALLBACK: If no history, use lastDashboard.predictions (if available)
-  try {
-    if (lastDashboard && Array.isArray(lastDashboard.predictions) && lastDashboard.predictions.length > 0) {
-      // take last up to 12 predictions (most recent first), reverse so time increases left-to-right
-      const preds = lastDashboard.predictions.slice(0, 12).reverse();
-      labels = preds.map(p => p.created_at ? new Date(p.created_at).toLocaleTimeString() : '-');
-      thunder = preds.map(p => {
-        let v = (p.thunderstorm_prob ?? p.thunder ?? 0);
-        if (v > 1) v = v / 100;
-        return clamp(Math.round(Number(v) * 100), 0, 100);
-      });
-      gale = preds.map(p => {
-        let v = (p.gale_wind_prob ?? p.gale ?? 0);
-        if (v > 1) v = v / 100;
-        return clamp(Math.round(Number(v) * 100), 0, 100);
-      });
-
-      drawTrendChart(labels, thunder, gale);
-      return;
-    }
-  } catch (err) {
-    console.warn('fallback build from lastDashboard failed', err);
-  }
-
-  // If we get here: no history and no preds -> destroy chart and draw empty canvas message
-  if (trendChart) {
-    try { trendChart.destroy(); } catch(e) {}
-    trendChart = null;
-  }
-  // draw empty placeholder grid (Chart.js empty dataset, so you have grid + text)
-  drawTrendChart([''], [0], [0], { placeholderText: 'No prediction history available' });
-}
-
-/* small helper */
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-
-/* drawTrendChart: creates or updates Chart.js line chart.
-   Accepts optional opts: { placeholderText: 'No data' } to show center text when data is trivial.
-*/
-function drawTrendChart(labels, thunderData, galeData, opts = {}) {
-  const ctxEl = document.getElementById("riskTrendChart");
-  if (!ctxEl) return;
-  const ctx = ctxEl.getContext("2d");
-
-  // If the data is single zero and we want to show placeholder, set a neutral label
-  const showPlaceholder = opts.placeholderText && labels.length === 1 && (thunderData[0] === 0 && galeData[0] === 0);
-
-  // If chart exists - update it; otherwise create
-  if (trendChart) {
-    // update labels & datasets
-    trendChart.data.labels = labels;
-    if (trendChart.data.datasets && trendChart.data.datasets.length >= 2) {
-      trendChart.data.datasets[0].data = thunderData;
-      trendChart.data.datasets[1].data = galeData;
-    } else {
-      trendChart.data.datasets = [
-        { label: "Thunderstorm (%)", data: thunderData, tension: 0.25, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, borderColor: '#7c3aed', backgroundColor: '#7c3aed', fill: false, yAxisID: 'y' },
-        { label: "Gale Wind (%)", data: galeData, tension: 0.25, borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, borderColor: '#f97316', backgroundColor: '#f97316', fill: false, yAxisID: 'y' }
-      ];
-    }
-    trendChart.options.plugins.centerText = showPlaceholder ? { text: opts.placeholderText } : null;
-    trendChart.update();
-    return;
-  }
-
-  // create new chart
-  const cfg = {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: "Thunderstorm (%)",
-          data: thunderData,
-          tension: 0.25,
-          borderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 6,
-          yAxisID: 'y',
-          fill: false,
-          borderColor: '#7c3aed',
-          backgroundColor: '#7c3aed'
-        },
-        {
-          label: "Gale Wind (%)",
-          data: galeData,
-          tension: 0.25,
-          borderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 6,
-          yAxisID: 'y',
-          fill: false,
-          borderColor: '#f97316',
-          backgroundColor: '#f97316'
-        }
-      ]
-    },
-    options: {
-      interaction: { mode: 'nearest', axis: 'x', intersect: false },
-      plugins: {
-        tooltip: {
-          enabled: true,
-          mode: 'index',
-          intersect: false,
-          callbacks: {
-            label: function(context) {
-              const v = context.parsed.y;
-              return (context.dataset.label || '') + ': ' + (typeof v === 'number' ? v : '-') + '%';
-            }
-          }
-        },
-        legend: { display: true, position: 'top' },
-        // custom center text plugin hook will be attached after creation
-      },
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          display: true,
-          title: { display: true, text: 'Time' }
-        },
-        y: {
-          display: true,
-          title: { display: true, text: 'Risk (%)' },
-          min: 0,
-          max: 100,
-          ticks: { stepSize: 10 }
-        }
-      }
-    }
-  };
-
-  // create chart instance
-  trendChart = new Chart(ctx, cfg);
-
-  // optional: small plugin to show centered placeholder text when no meaningful data
-  Chart.register({
-    id: 'centerTextPlugin',
-    beforeDraw: (chart) => {
-      const center = chart.options.plugins.centerText;
-      if (!center || !center.text) return;
-      const ctxP = chart.ctx;
-      const width = chart.width;
-      const height = chart.height;
-      ctxP.save();
-      ctxP.font = '14px sans-serif';
-      ctxP.fillStyle = '#9ca3af';
-      ctxP.textAlign = 'center';
-      ctxP.textBaseline = 'middle';
-      ctxP.fillText(center.text, width / 2, height / 2);
-      ctxP.restore();
+  el('#zoomToAirfield').addEventListener('click', () => {
+    if (lastDashboard?.airfield?.latitude && lastDashboard?.airfield?.longitude) {
+      map.setView([ lastDashboard.airfield.latitude, lastDashboard.airfield.longitude ], 10, { animate: true });
     }
   });
 
-  // apply placeholder if requested
-  if (showPlaceholder) {
-    trendChart.options.plugins.centerText = { text: opts.placeholderText };
-    trendChart.update();
-  }
-}
-
-/* --- end replacement --- */
-
-
-/* drawEmptyChart: keeps axes/grid visible and displays centered "No data" message */
-function drawEmptyChart() {
-  const canvas = document.getElementById("riskTrendChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-
-  if (trendChart) {
-    try { trendChart.destroy(); } catch(e) {}
-    trendChart = null;
-  }
-
-  // plugin draws centered message when there is no dataset
-  const centerMessage = {
-    id: 'centerMessage',
-    beforeDraw: (chart) => {
-      const hasData = Array.isArray(chart.data.datasets) && chart.data.datasets.some(ds => Array.isArray(ds.data) && ds.data.some(v => v != null));
-      if (!hasData) {
-        const { ctx, chartArea: {left, right, top, bottom, width, height} } = chart;
-        ctx.save();
-        ctx.fillStyle = '#6b7280';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = '14px system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial';
-        ctx.fillText('No prediction history available', left + width/2, top + height/2);
-        ctx.restore();
-      }
+  el('#toggleStorms').addEventListener('click', () => {
+    stormsVisible = !stormsVisible;
+    if (!stormsVisible) {
+      stormLayerGroup.clearLayers();
+      if (animateHandle) { cancelAnimationFrame(animateHandle); animateHandle = null; }
+    } else if (lastDashboard?.stormCells) {
+      animateStorms(lastDashboard.stormCells);
     }
-  };
-
-  trendChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { display: true, title: { display: true, text: 'Time' } },
-        y: { display: true, title: { display: true, text: 'Risk (%)' }, min: 0, max: 100, ticks: { stepSize: 10 } }
-      },
-      plugins: { legend: { display: false } }
-    },
-    plugins: [centerMessage]
   });
 }
 
-/* Auto-refresh */
 function startAutoRefresh(){
-  // reset timer
   if (refreshTimer) clearInterval(refreshTimer);
   refreshCountdown = refreshSec;
   el('#autoRefresh').textContent = refreshCountdown;
@@ -711,11 +512,229 @@ function startAutoRefresh(){
     refreshCountdown--;
     el('#autoRefresh').textContent = refreshCountdown;
     if (refreshCountdown <= 0) {
-      await loadDashboard();
       refreshCountdown = refreshSec;
+      await loadDashboard();
     }
   }, 1000);
 }
+
+
+// ========================
+// ANIMATION & CHARTS
+// ========================
+
+function animateStorms(featureCollection) {
+  stormLayerGroup.clearLayers();
+  if (!featureCollection || !featureCollection.features) return;
+
+  const points = featureCollection.features.filter(f => f.geometry?.type === 'Point');
+
+  const items = points.map(f => {
+    const p = f.properties || {};
+    const mv = p.movement || {direction: 0, speed_kmh: 0};
+    const dirRad = (mv.direction || 0) * Math.PI/180;
+    const degPerSec = ((mv.speed_kmh || 0) / 3600) / 111;
+    const dlat = degPerSec * Math.cos(dirRad);
+    const lat0 = (f.geometry.coordinates[1] || 0);
+    const dlon = degPerSec * Math.sin(dirRad) / Math.cos(lat0 * Math.PI/180);
+    return { f, dlat, dlon };
+  });
+
+  let last = performance.now();
+  if (animateHandle) cancelAnimationFrame(animateHandle);
+
+  function step(now) {
+    const dt = (now - last) / 1000.0;
+    last = now;
+
+    items.forEach(item => {
+      item.f.geometry.coordinates[1] += item.dlat * dt * 0.5;
+      item.f.geometry.coordinates[0] += item.dlon * dt * 0.5;
+    });
+
+    stormLayerGroup.clearLayers();
+    items.forEach(item => {
+      const p = item.f.properties || {};
+      const [lon, lat] = item.f.geometry.coordinates;
+      const color = p.type === 'Thunderstorm' ? '#8b5cf6' : (p.type === 'GaleWind' ? '#f97316' : '#0ea5e9');
+      const radius = 10000 * Math.max(0.2, Math.min(1.5, (p.intensity || 0.5)));
+      const circle = L.circle([lat, lon], {
+        radius, color, weight: 1.5, fillColor: color,
+        fillOpacity: 0.15 + (p.intensity || 0.4) * 0.5
+      }).addTo(stormLayerGroup);
+      circle.bindPopup(`<b>${p.type || 'Storm'}</b><br/>Intensity: ${p.intensity || 0}<br/>Moving ${p.movement?.direction || 0}° @ ${p.movement?.speed_kmh || 0} km/h`);
+    });
+
+    if (stormsVisible) animateHandle = requestAnimationFrame(step);
+  }
+
+  last = performance.now();
+  animateHandle = requestAnimationFrame(step);
+}
+
+async function loadHistoryChart(airfieldQuery){
+  const hours = 6;
+  const url = `/api/predictions/history/?airfield=${encodeURIComponent(airfieldQuery)}&hours=${hours}`;
+  let labels = [], thunder = [], gale = [];
+
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (r.ok) {
+      const j = await r.json();
+      const hist = j.history || [];
+      if (Array.isArray(hist) && hist.length > 0) {
+        labels = hist.map(h => new Date(h.created_at || h.timestamp).toLocaleTimeString());
+        thunder = hist.map(h => {
+          let v = h.thunderstorm_prob ?? 0;
+          return Math.round(Number(v > 1 ? v/100 : v) * 100);
+        });
+        gale = hist.map(h => {
+          let v = h.gale_wind_prob ?? 0;
+          return Math.round(Number(v > 1 ? v/100 : v) * 100);
+        });
+        drawTrendChart(labels, thunder, gale);
+        return;
+      }
+    }
+  } catch (err) { console.warn('history fetch failed', err); }
+
+  if (lastDashboard?.predictions?.length > 0) {
+    const preds = lastDashboard.predictions.slice(0, 12).reverse();
+    labels = preds.map(p => new Date(p.created_at).toLocaleTimeString());
+    thunder = preds.map(p => {
+        let v = p.thunderstorm_prob ?? 0;
+        return Math.round(Number(v > 1 ? v/100 : v) * 100);
+    });
+    gale = preds.map(p => {
+        let v = p.gale_wind_prob ?? 0;
+        return Math.round(Number(v > 1 ? v/100 : v) * 100);
+    });
+    drawTrendChart(labels, thunder, gale);
+    return;
+  }
+  
+  drawTrendChart([], [], [], { placeholderText: 'No prediction history available' });
+}
+
+function drawTrendChart(labels, thunderData, galeData, opts = {}) {
+  const ctxEl = document.getElementById("riskTrendChart");
+  if (!ctxEl) return;
+  const ctx = ctxEl.getContext("2d");
+
+  // Read theme CSS variables (uses the same approach as your code)
+  const style = getComputedStyle(document.body);
+  const gridColor = style.getPropertyValue('--chart-grid-color').trim() || 'rgba(0,0,0,0.1)';
+  const labelColor = style.getPropertyValue('--chart-label-color').trim() || '#475569';
+  const tooltipBgVar = style.getPropertyValue('--bg-secondary-opaque').trim() || '#ffffff';
+  const borderColor = style.getPropertyValue('--border-color').trim() || 'rgba(203,213,225,0.5)';
+  const textPrimaryVar = style.getPropertyValue('--text-primary').trim() || '#0f172a';
+  const textSecondaryVar = style.getPropertyValue('--text-secondary').trim() || '#475569';
+
+  // Determine theme (dark or light) and choose tooltip text color accordingly
+  const isDark = document.documentElement.classList.contains('dark');
+  // Force white tooltip text in dark mode, use textPrimary in light mode
+  const tooltipTextColor = isDark ? '#ffffff' : (textPrimaryVar || '#0f172a');
+  // Keep tooltip background from CSS var, but fall back if it's 'transparent' or empty
+  const tooltipBg = tooltipBgVar || (isDark ? 'rgba(22,32,57,0.95)' : '#ffffff');
+
+  const showPlaceholder = opts.placeholderText && (!labels || labels.length === 0);
+
+  // Destroy previous chart if present
+  if (typeof trendChart !== 'undefined' && trendChart) {
+    try { trendChart.destroy(); } catch (e) { /* ignore */ }
+    trendChart = null;
+  }
+
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Thunderstorm (%)",
+          data: thunderData,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          borderColor: '#8b5cf6',
+          backgroundColor: '#8b5cf6',
+          fill: false
+        },
+        {
+          label: "Gale Wind (%)",
+          data: galeData,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHoverRadius: 6,
+          borderColor: '#f97316',
+          backgroundColor: '#f97316',
+          fill: false
+        }
+      ]
+    },
+    options: {
+      interaction: { mode: 'index', axis: 'x', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: labelColor,
+            boxWidth: 12,
+            padding: 20,
+            // optional: control font here if you want
+            // font: { family: 'Inter, sans-serif', size: 12, weight: '600' }
+          }
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: tooltipBg,
+          titleColor: tooltipTextColor,
+          bodyColor: tooltipTextColor,
+          borderColor: borderColor,
+          borderWidth: 1,
+          // Optional: increase padding for readability
+          padding: 8,
+          // Use caret and rounded corners
+          displayColors: true,
+        }
+      },
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          ticks: { color: labelColor },
+          grid: { color: gridColor, drawOnChartArea: false }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          ticks: { stepSize: 25, color: labelColor },
+          grid: { color: gridColor }
+        }
+      }
+    },
+    plugins: [{
+      id: 'centerTextPlugin',
+      beforeDraw: (chart) => {
+        if (!showPlaceholder) return;
+        const { ctx, width, height } = chart;
+        ctx.save();
+        // Respect labelColor for placeholder text so it's visible in both themes
+        ctx.font = '14px Inter, sans-serif';
+        ctx.fillStyle = labelColor || (isDark ? '#94a3b8' : '#475569');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(opts.placeholderText, width / 2, height / 2);
+        ctx.restore();
+      }
+    }]
+  });
+}
+
 
 </script>
 </body>

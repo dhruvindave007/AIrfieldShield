@@ -27,7 +27,7 @@ ai_models/trained/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs and caches
 *.log
 *.tmp
 *.csv

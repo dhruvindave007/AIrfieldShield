@@ -110,6 +110,8 @@
     .alert-red { background-color: var(--alert-red-bg); border-left-color: var(--alert-red-border); }
     .alert-orange { background-color: var(--alert-orange-bg); border-left-color: var(--alert-orange-border); }
     .alert-green { background-color: var(--alert-green-bg); border-left-color: var(--alert-green-border); }
+
+    
   </style>
 
   <script>
@@ -127,9 +129,6 @@
   <header class="sticky top-0 z-50 card m-4 mb-0">
     <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <div class="w-10 h-10 rounded-lg bg-gray-500/10 flex items-center justify-center text-[var(--accent-primary)]">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M14.074 9.426c.92 -.21 1.932 -.21 2.926 0" /><path d="M16.923 10.999a5 5 0 0 1 0 2" /><path d="M17 14.5c-.96 .21 -2.016 .22 -3 0" /></svg>
-        </div>
         <div>
           <div class="text-lg font-semibold">Airfield Weather Dashboard</div>
           <div class="text-sm muted">Nowcasting · Alerts · Predictions · Storm overlays</div>
@@ -232,7 +231,44 @@
   <footer class="max-w-7xl mx-auto px-6 py-4 text-sm muted text-center">
     <div>Prototype · AI/ML Nowcasting — simulated data for visualization</div>
   </footer>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
+<footer class="max-w-7xl mx-auto px-6 pb-6 text-xs muted text-center">
+  <div>
+    <a href="https://www.instagram.com/davedhruvin07/" target="_blank" class="mx-2">
+      <i class="fab fa-instagram"></i> (dhruvin)
+    </a> |
+    <a href="https://www.instagram.com/technomal_/" target="_blank" class="mx-2">
+      <i class="fab fa-instagram"></i> (malay)
+    </a> |
+    <a href="https://www.linkedin.com/in/mrdhruvindave/" target="_blank" class="mx-2">
+      <i class="fab fa-linkedin"></i> LinkedIn
+    </a> |
+    <a href="https://github.com/dhruvindave007" target="_blank" class="mx-2">
+      <i class="fab fa-github"></i> GitHub
+    </a>
+  </div>
+  <style>
+  footer a {
+    color: #6b7280; /* muted gray */
+    text-decoration: none;
+    transition: color 0.3s ease;
+  }
+
+  footer a:hover {
+    color: #ffffffff; /* darker on hover */
+  }
+
+  footer i {
+    margin-right: 5px;
+    font-size: 0.875rem;
+  }
+</style>
+
+</footer>
+  <footer class="max-w-7xl mx-auto px-6 pb-6 text-xs muted text-center">
+    <div> Made with ♥️ by Dhruvin and Malay for Air Traffic Management</div>
+  </footer>
 <script>
 /* Dashboard JS: expects /api/frontend/dashboard/?airfield=... and /api/predictions/history/?airfield=...&hours=6 */
 

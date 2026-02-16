@@ -1,24 +1,28 @@
-Django>=4.2
+# Core Django
+Django>=5.2.6
 djangorestframework
+django-cors-headers
+django-crontab
+django-extensions
+django-celery-results
+
+# Database
 psycopg2-binary
+
+# Data Science & ML
 numpy
 pandas
-scikit-learn
-tensorflow   # optional heavy dependency; replace/remove as needed
-celery
-redis
-pillow
-matplotlib
-grpcio         # if you want gRPC integrations
-# requirements.txt
-Django~=5.2.6
-djangorestframework
-pandas
-numpy
 scikit-learn
 joblib
-tensorflow>=2.12  # minimal Keras LSTM support
+tensorflow>=2.12
 matplotlib
+
+# Task Queue
+celery
+redis
+
+# Utilities
+pillow
 python-dateutil
-django-cors-headers
+grpcio
 

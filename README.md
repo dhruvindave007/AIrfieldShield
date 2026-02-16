@@ -171,7 +171,7 @@ airfieldshield/
 
 Before installing AirfieldShield, ensure you have the following:
 
-- **Python 3.12 or higher** - [Download Python](https://www.python.org/downloads/)
+- **Python 3.8 or higher** (Python 3.11 recommended) - [Download Python](https://www.python.org/downloads/)
 - **pip** (Python package manager, usually comes with Python)
 - **Git** - [Download Git](https://git-scm.com/downloads)
 - **4GB RAM minimum** (8GB recommended for faster model training)
@@ -412,20 +412,21 @@ AirfieldShield uses an ensemble of machine learning models to predict weather ha
 
 | Model | Accuracy | Precision | Recall | F1 Score | ROC-AUC |
 |-------|----------|-----------|--------|----------|---------|
-| **Random Forest (Tabular)** | 93.06% | 0.9306 | 1.0000 | 0.9641 | 0.4334 |
-| **LSTM (Sequence)** | 93.06% | 0.9306 | 1.0000 | 0.9641 | 0.5586 |
-| **CNN (Radar Image)** | 93.06% | 0.9306 | 1.0000 | 0.9641 | 0.5161 |
-| **Meta-Learner (Ensemble)** | 93.06% | 0.9306 | 1.0000 | 0.9641 | 0.5673 |
+| **Random Forest (Tabular)** | 92.31% | 0.9231 | 1.0000 | 0.9600 | 0.4598 |
+| **LSTM (Sequence)** | 92.31% | 0.9231 | 1.0000 | 0.9600 | 0.4904 |
+| **CNN (Radar Image)** | 92.31% | 0.9231 | 1.0000 | 0.9600 | 0.5062 |
+| **Meta-Learner (Ensemble)** | 92.31% | 0.9231 | 1.0000 | 0.9600 | 0.4906 |
 
 ### Gale Wind Prediction Models
 
 | Model | Accuracy | Precision | Recall | F1 Score | ROC-AUC |
 |-------|----------|-----------|--------|----------|---------|
-| **Random Forest (Tabular)** | 93.94% | 0.9389 | 0.9986 | 0.9678 | 0.6795 |
+| **Random Forest (Tabular)** | 95.00% | 0.9520 | 0.9966 | 0.9738 | 0.7011 |
+| **Meta-Learner** | 94.88% | 0.9508 | 0.9966 | 0.9732 | 0.7011 |
 
 ### Key Metrics Explained
 
-- **Accuracy**: Overall correctness of predictions (93-94% of predictions are correct)
+- **Accuracy**: Overall correctness of predictions (92-95% of predictions are correct)
 - **Precision**: When the model predicts a hazard, how often is it correct
 - **Recall**: What percentage of actual hazards does the model detect (near 100% - excellent!)
 - **F1 Score**: Harmonic mean of precision and recall (0.96+ is excellent)
@@ -445,7 +446,7 @@ This command will:
 - Display detailed accuracy metrics for each model
 - Save trained models to `ai_models/trained/`
 
-**Note:** The models achieve high accuracy (93%+) with excellent recall (99-100%), meaning they successfully detect nearly all hazardous conditions, which is critical for aviation safety. The ensemble approach combines multiple models to provide robust, reliable predictions.
+**Note:** The models achieve high accuracy (92-95%) with excellent recall (99-100%), meaning they successfully detect nearly all hazardous conditions, which is critical for aviation safety. The ensemble approach combines multiple models to provide robust, reliable predictions.
 
 ---
 

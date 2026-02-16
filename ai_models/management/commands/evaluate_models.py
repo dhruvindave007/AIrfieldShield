@@ -43,7 +43,7 @@ def generate_tabular_and_sequences(n_samples=5000, seq_len=30, pos_frac=0.25):
     y_thunder = []
     y_gale = []
 
-    # generate sequences with controlled positive fraction
+    # Generate sequences with controlled positive fraction
     pool = []
     for i in range(n_samples * 3):
         temps = np.random.normal(loc=30, scale=4, size=seq_len)
@@ -169,17 +169,31 @@ class Command(BaseCommand):
         self.stdout.write(self.style.NOTICE(f"📊 Generating {n} synthetic samples (seq_len={seq_len})..."))
         X_tab, X_seq, X_img, y_th, y_gale = generate_tabular_and_sequences(n, seq_len)
 
-        # Data split
-        (X_tab_tr, X_tab_te,
-         X_seq_tr, X_seq_te,
-         X_img_tr, X_img_te,
-         y_tr_th, y_te_th) = train_test_split(
+        # Data split: Train (60%), Validation (20%), Test (20%)
+        # First split: 80% train+val, 20% test
+        (X_tab_trainval, X_tab_te,
+         X_seq_trainval, X_seq_te,
+         X_img_trainval, X_img_te,
+         y_trainval_th, y_te_th) = train_test_split(
             X_tab, X_seq, X_img, y_th, test_size=0.2, random_state=42)
 
-        _, _, _, _, _, _, y_tr_gale, y_te_gale = train_test_split(
+        _, _, _, _, _, _, y_trainval_gale, y_te_gale = train_test_split(
             X_tab, X_seq, X_img, y_gale, test_size=0.2, random_state=42)
 
+        # Second split: split train+val into train (75% of 80% = 60%) and val (25% of 80% = 20%)
+        (X_tab_tr, X_tab_val,
+         X_seq_tr, X_seq_val,
+         X_img_tr, X_img_val,
+         y_tr_th, y_val_th) = train_test_split(
+            X_tab_trainval, X_seq_trainval, X_img_trainval, y_trainval_th, 
+            test_size=0.25, random_state=42)
+
+        _, _, _, _, _, _, y_tr_gale, y_val_gale = train_test_split(
+            X_tab_trainval, X_seq_trainval, X_img_trainval, y_trainval_gale, 
+            test_size=0.25, random_state=42)
+
         self.stdout.write(f"  Training set: {len(X_tab_tr)} samples")
+        self.stdout.write(f"  Validation set: {len(X_tab_val)} samples")
         self.stdout.write(f"  Test set: {len(X_tab_te)} samples")
         self.stdout.write("")
 
@@ -241,7 +255,7 @@ class Command(BaseCommand):
         
         lstm_th = build_lstm_model(seq_len=seq_len, obs_dim=X_seq.shape[2])
         es = callbacks.EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
-        lstm_th.fit(X_seq_tr, y_tr_th, validation_data=(X_seq_te, y_te_th),
+        lstm_th.fit(X_seq_tr, y_tr_th, validation_data=(X_seq_val, y_val_th),
                     epochs=epochs, batch_size=batch, callbacks=[es], verbose=0)
         p_lstm_th = lstm_th.predict(X_seq_te, verbose=0).ravel()
         
@@ -264,7 +278,7 @@ class Command(BaseCommand):
         
         cnn_th = build_cnn_model(h=X_img.shape[1], w=X_img.shape[2])
         es2 = callbacks.EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
-        cnn_th.fit(X_img_tr, y_tr_th, validation_data=(X_img_te, y_te_th),
+        cnn_th.fit(X_img_tr, y_tr_th, validation_data=(X_img_val, y_val_th),
                    epochs=epochs, batch_size=batch, callbacks=[es2], verbose=0)
         p_cnn_th = cnn_th.predict(X_img_te, verbose=0).ravel()
         
@@ -285,17 +299,24 @@ class Command(BaseCommand):
         self.stdout.write(self.style.NOTICE("🎯 Training Meta-Learner (Ensemble) - Thunderstorm Prediction"))
         self.stdout.write(self.style.SUCCESS("─" * 80))
         
+        # Train meta-learner on VALIDATION set predictions to avoid data leakage
+        rf_val_th = calib_rf_th.predict_proba(X_tab_val)[:, 1]
+        lstm_val_th = lstm_th.predict(X_seq_val, verbose=0).ravel()
+        cnn_val_th = cnn_th.predict(X_img_val, verbose=0).ravel()
+        meta_X_train = np.vstack([rf_val_th, lstm_val_th, cnn_val_th]).T
+        meta_y_train = y_val_th
+        
+        meta = LogisticRegression(max_iter=2000)
+        meta.fit(meta_X_train, meta_y_train)
+        
+        # Evaluate meta-learner on TEST set predictions
         rf_te_th = calib_rf_th.predict_proba(X_tab_te)[:, 1]
         lstm_te_th = lstm_th.predict(X_seq_te, verbose=0).ravel()
         cnn_te_th = cnn_th.predict(X_img_te, verbose=0).ravel()
-        meta_X = np.vstack([rf_te_th, lstm_te_th, cnn_te_th]).T
-        meta_y = y_te_th
+        meta_X_test = np.vstack([rf_te_th, lstm_te_th, cnn_te_th]).T
+        meta_p = meta.predict_proba(meta_X_test)[:, 1]
         
-        meta = LogisticRegression(max_iter=2000)
-        meta.fit(meta_X, meta_y)
-        meta_p = meta.predict_proba(meta_X)[:, 1]
-        
-        metrics_meta = evaluate_binary_model(meta_y, meta_p)
+        metrics_meta = evaluate_binary_model(y_te_th, meta_p)
         all_metrics['meta_thunderstorm'] = metrics_meta
         
         self.stdout.write(f"  ✓ Accuracy:  {metrics_meta['accuracy']:.4f}")
@@ -312,10 +333,22 @@ class Command(BaseCommand):
         self.stdout.write(self.style.NOTICE("🎯 Training Meta-Learner - Gale Wind Prediction"))
         self.stdout.write(self.style.SUCCESS("─" * 80))
         
+        # Train meta-learner on VALIDATION set predictions to avoid data leakage
+        p_rf_g_val = calib_rf_g.predict_proba(X_tab_val)[:, 1]
         meta_gale = LogisticRegression(max_iter=1000)
-        meta_gale.fit(p_rf_g.reshape(-1, 1), y_te_gale)
+        meta_gale.fit(p_rf_g_val.reshape(-1, 1), y_val_gale)
         
-        self.stdout.write("  ✓ Meta-learner trained (based on RF probabilities)")
+        # Evaluate on test set
+        p_rf_g_test = calib_rf_g.predict_proba(X_tab_te)[:, 1]
+        meta_gale_p = meta_gale.predict_proba(p_rf_g_test.reshape(-1, 1))[:, 1]
+        metrics_meta_gale = evaluate_binary_model(y_te_gale, meta_gale_p)
+        all_metrics['meta_gale'] = metrics_meta_gale
+        
+        self.stdout.write(f"  ✓ Accuracy:  {metrics_meta_gale['accuracy']:.4f}")
+        self.stdout.write(f"  ✓ Precision: {metrics_meta_gale['precision']:.4f}")
+        self.stdout.write(f"  ✓ Recall:    {metrics_meta_gale['recall']:.4f}")
+        self.stdout.write(f"  ✓ F1 Score:  {metrics_meta_gale['f1']:.4f}")
+        self.stdout.write(f"  ✓ ROC-AUC:   {metrics_meta_gale['auc']:.4f}")
         self.stdout.write("")
 
         joblib.dump(meta_gale, str(BASE_DIR / "meta_gale.joblib"))

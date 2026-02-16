@@ -343,6 +343,67 @@ python manage.py createsuperuser
 
 ---
 
+## Verifying Your Installation
+
+After following the installation steps, verify everything is working correctly:
+
+### 1. Check Models are Trained
+
+```bash
+ls -lh ai_models/trained/
+```
+
+You should see:
+- `rf_thunder_calib.joblib`
+- `rf_gale_calib.joblib`
+- `lstm_thunder.keras`
+- `cnn_thunder.keras`
+- `meta_thunder.joblib`
+- `meta_gale.joblib`
+
+### 2. Verify Database Setup
+
+```bash
+python manage.py showmigrations
+```
+
+All migrations should show `[X]` (applied).
+
+### 3. Generate Test Predictions
+
+```bash
+python manage.py create_sample_stations
+python manage.py seed_observations
+python manage.py predict
+```
+
+You should see "Saved Prediction" messages for each airfield.
+
+### 4. Test the API
+
+With the server running (`python manage.py runserver`), open a new terminal and test:
+
+```bash
+curl http://127.0.0.1:8000/api/frontend/dashboard/?airfield=TEST
+```
+
+You should get a JSON response with dashboard data.
+
+### 5. Access the Dashboard
+
+Open your browser to [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+You should see:
+- ✅ An interactive map with storm markers
+- ✅ Active alerts panel
+- ✅ Prediction cards with probability bars
+- ✅ Risk trend chart
+- ✅ Current weather summary
+
+If everything works, your installation is complete! 🎉
+
+---
+
 ## Model Accuracy & Performance
 
 AirfieldShield uses an ensemble of machine learning models to predict weather hazards. Below are the **actual performance metrics** from our trained models on test data:

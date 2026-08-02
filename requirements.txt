@@ -13,6 +13,9 @@ grpcio         # if you want gRPC integrations
 # requirements.txt
 Django~=5.2.6
 djangorestframework
+django-crontab
+django-extensions
+django-celery-results
 pandas
 numpy
 scikit-learn

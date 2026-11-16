@@ -1,33 +1,38 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Virtual env
+# Virtual envs / secrets
 venv/
 .venv/
+env/
 .env
 .env.*
 !.env.example
 
 # Django
 *.sqlite3
-db.sqlite3
 db.sqlite3.backup.*
 /media/
-staticfiles/
+/staticfiles/
+*.log
 
-# AI models
-ai_models/trained/
+# Data: raw downloads are reproducible via scripts/fetch_metar.py
+/data/raw/
+
+# Model artifacts: ignore by default, but keep the one evaluated release artifact
 *.joblib
 *.h5
 *.keras
 *.pkl
+ai_models/trained/
+!ai_models/artifacts/*.joblib
 
-# Logs
-*.log
-
-# IDE
+# IDE / OS
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db

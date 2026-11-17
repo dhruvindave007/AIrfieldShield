@@ -1,306 +1,141 @@
 # AirfieldShield
 
-**AI-Driven Airfield Weather Prediction and Alert System**
+Short-range (1 h and 3 h) probabilistic nowcasts of thunderstorms and strong
+surface wind at six Indian airfields, built on archived METAR reports, served
+by a Django API and refreshed by Celery after each half-hourly METAR.
 
-AirfieldShield is an intelligent nowcasting and risk-forecasting system designed to assist aviation and weather monitoring authorities in early detection of severe conditions such as thunderstorms, gale winds, and heavy rainfall near airfields.  
-It uses ensemble AI/ML models (Random Forest, LSTM, CNN, and a Meta-Learner) trained on weather observations, radar imagery, and atmospheric data to generate real-time predictions and visualize them through an interactive dashboard.
+## Problem
 
----
+Airfield operations need a few hours' warning of thunderstorms and strong
+wind to plan ground handling, fuelling and runway use. The question here is
+narrow and testable: given only the METAR history of an airfield up to hour
+`h`, what is the probability of
 
-## Table of Contents
-- [Overview](#overview)
-- [Features](#features)
-- [System Architecture](#system-architecture)
-- [Technical Stack](#technical-stack)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Training the AI Model](#training-the-ai-model)
-- [Running the System](#running-the-system)
-- [Dashboard Overview](#dashboard-overview)
-- [Data Flow](#data-flow)
-- [Results](#results)
-- [Future Scope](#future-scope)
-- [Author](#author)
-- [License](#license)
+| Target | Event in `(h, h+H]` |
+|---|---|
+| `thunder_1h`, `thunder_3h` | TS or VCTS reported, H = 1 h / 3 h |
+| `wind_1h`, `wind_3h` | sustained wind or gust >= 25 kt, H = 1 h / 3 h |
 
----
+The wind threshold is 25 kt rather than the 34 kt gale threshold because gale
+hours are too rare at these stations to evaluate (9-43 per station in nine
+years; see the data table in the evaluation report).
 
-## Overview
+## Data
 
-AirfieldShield is a full-stack Django project integrating machine learning for aviation weather risk assessment.  
-It predicts and visualizes potential hazards such as **thunderstorms** and **gale winds** based on recent weather data.  
-The dashboard provides a real-time view of:
-- Active alerts with severity levels.
-- Recent predictions and their probabilities.
-- A live map showing simulated storm activity.
-- Risk trend charts and current weather parameters.
+- Source: Iowa Environmental Mesonet ASOS/METAR archive (public, no key),
+  routine and special reports, 2016-2024.
+- Stations: VIDP (Delhi), VABB (Mumbai), VOMM (Chennai), VECC (Kolkata),
+  VOBL (Bengaluru), VAAH (Ahmedabad).
+- `scripts/fetch_metar.py` downloads the raw reports into `data/raw/`
+  (git-ignored, ~110 MB) and builds `data/metar_hourly.csv.gz` (4 MB,
+  470,057 station-hours, committed) plus `data/metar_hourly.meta.json` with
+  per-station quality-control counts.
+- QC drops malformed wind groups, out-of-range values, implausible gust
+  factors, isolated wind spikes and temperature jumps before hourly
+  aggregation.
 
----
+No synthetic data is used in training or evaluation.
 
-## Features
+## Method
 
-- **AI-Based Nowcasting:**  
-  Predicts short-term risks for thunderstorms and gale winds.
+Code: `ai_models/ml/`.
 
-- **Interactive Dashboard:**  
-  Real-time visualization using Leaflet (map), Chart.js (risk trends), and Tailwind CSS (UI).
+- **Features** (`features.py`): current state, 1 h / 3 h tendencies, rolling
+  history of thunder, CB and peak wind, hours since last thunderstorm, and
+  solar-hour / day-of-year encodings. All features at hour `h` use reports at
+  or before `h`; the same function is used for training and serving.
+- **Labels** look strictly forward. A row is labelled 0 only if every hour in
+  the window has a report; otherwise it is dropped.
+- **Split**: chronological. Train < 2022, validation = 2022, test = 2023-2024.
+  Rows whose label window crosses a boundary are purged.
+- **Baselines**: constant base rate, climatology (station x month x 3-hour
+  block), persistence, persistence + METAR trend group, logistic regression.
+- **Model**: scikit-learn `HistGradientBoostingClassifier`. Iteration count
+  and class weighting are chosen on validation, then probabilities are
+  calibrated with isotonic regression fitted on validation. Alert thresholds
+  are picked on validation for fixed precision targets and reported on test.
+- **Uncertainty**: 95% CIs from a block bootstrap over station-days, paired
+  across methods.
+- Seed 42 throughout; the report records the data hash and code commit.
 
-- **Ensemble Machine Learning Pipeline:**  
-  Combines RandomForest (tabular), LSTM (sequential), CNN (image-based radar), and a meta-learner for final inference.
+## Results (test period 2023-2024)
 
-- **Storm Simulation Layer:**  
-  Displays synthetic radar-like storm movement around airfields.
+From [docs/evaluation_report.md](docs/evaluation_report.md), which is
+generated by the training script. PR-AUC is the headline metric because the
+events are rare (positive rate 0.2-4%).
 
-- **Auto-Refresh Mechanism:**  
-  Continuously updates dashboard data and chart trends without page reloads.
+| Target | Climatology PR-AUC | Persistence PR-AUC | HGB (calibrated) PR-AUC [95% CI] | HGB Brier | Persistence Brier |
+|---|---:|---:|---:|---:|---:|
+| `thunder_1h` | 0.070 | 0.409 | 0.576 [0.555, 0.601] | 0.0112 | 0.0122 |
+| `thunder_3h` | 0.119 | 0.291 | 0.480 [0.461, 0.505] | 0.0230 | 0.0254 |
+| `wind_1h` | 0.008 | 0.203 | 0.337 [0.118, 0.478] | 0.0015 | 0.0017 |
+| `wind_3h` | 0.018 | 0.142 | 0.218 [0.104, 0.300] | 0.0036 | 0.0037 |
 
-- **Alert Management System:**  
-  Generates and displays severity-based alerts (Green, Orange, Red) using Django models.
+Operating point with the alert threshold chosen for 50% precision on 2022:
 
-- **Modular Architecture:**  
-  Each component (AI, core APIs, alerts, dashboard UI) is a separate Django app for scalability.
+| Target | Test precision | Test recall | Test alerts |
+|---|---:|---:|---:|
+| `thunder_1h` | 0.472 | 0.737 | 3,272 |
+| `thunder_3h` | 0.556 | 0.481 | 3,134 |
+| `wind_1h` | 0.719 | 0.197 | 57 |
+| `wind_3h` | 0.453 | 0.186 | 179 |
 
----
+The report also has paired differences against each baseline, onset-only
+scores (events not already in progress), per-station results, an ablation
+without the METAR trend group, reliability diagrams and PR curves
+(`docs/figures/`).
 
-## System Architecture
+## Limitations
 
-```mermaid
-flowchart TD
-    A["Weather Observations & Airfield Data"] --> B["AI Model Pipeline"]
-    B -->|Train & Predict| C["Prediction Engine"]
-    C --> D["Core API Layer"]
-    D --> E["Dashboard Frontend (React/JS + Tailwind + Chart.js)"]
-    D --> F["Alert System"]
-    F --> E
+- METAR only. No radar, satellite or NWP input, so the model mostly
+  extrapolates from what the airfield already reports; skill on storm
+  *onset* is much lower than on overall occurrence (thunder_1h onset PR-AUC
+  0.163).
+- Strong-wind events are rare in the test years (0.2-0.4% of hours), so the
+  wind confidence intervals are wide, and the Brier improvement over
+  persistence for `wind_1h` / `wind_3h` is not significant (CI includes 0).
+- One model per target is shared across all six stations; station is a
+  feature, not a separate model.
+- VECC had 1,568 reports dropped for out-of-range pressure; other stations
+  lose far fewer.
+- `docs/project_documentation.md` is an older design note describing a
+  simulated radar feed and an ensemble that this code does not implement.
 
-    subgraph "AI Models"
-        B1["Random Forest"]
-        B2["LSTM Sequence Model"]
-        B3["CNN Radar Model"]
-        B4["Meta-Learner"]
-        B1 --> B4
-        B2 --> B4
-        B3 --> B4
-    end
+## System
 
-    subgraph "Backend"
-        D1["Django + DRF APIs"]
-        D2["Database (SQLite/PostgreSQL)"]
-    end
+- `ingestion/`: fetches recent METARs (`manage.py ingest_metar`).
+- `ai_models/`: feature building and prediction with the saved artifact
+  `ai_models/artifacts/nowcast_hgb_v1.joblib` (`manage.py predict`).
+- `alerts/`: turns predictions over threshold into alerts; REST endpoints for
+  latest alerts, latest predictions per airfield and acknowledgement.
+- `core/`: airfields, observations, predictions, dashboard and history API.
+- Celery beat runs `ai_models.tasks.run_nowcast_cycle` at minutes 7 and 37,
+  a few minutes after each METAR is issued. `manage.py run_pipeline` runs one
+  cycle synchronously.
 
-    subgraph "Frontend"
-        E1["Leaflet Map"]
-        E2["Chart.js Risk Trend"]
-        E3["Tailwind UI"]
-        E1 --> E
-        E2 --> E
-        E3 --> E
-    end
-
-    A --> D2
-    B --> D2
-    D2 --> D
-    E -->|Fetch /api/frontend/dashboard| D
-
-```
-
----
-
-## Technical Stack
-
-**Backend:**  
-- Python 3.12  
-- Django 5.x  
-- Django REST Framework  
-- TensorFlow, scikit-learn, NumPy, Pandas  
-- Joblib (for model serialization)
-
-**Frontend:**  
-- HTML, Tailwind CSS, JavaScript  
-- Chart.js (for risk trend charts)  
-- Leaflet.js (for interactive maps)
-
-**Database:**  
-- SQLite (development)  
-- PostgreSQL (recommended for production)
-
-**Deployment Tools:**  
-- Git / GitHub  
-- Gunicorn / Nginx (for deployment)  
-- Docker (optional)
-
----
-
-## Project Structure
+## Reproduce
 
 ```bash
-airfieldshield/
-├── ai_models/                     # ML training & prediction logic
-│   ├── management/commands/
-│   │   ├── train_ensemble.py      # Ensemble model training
-│   │   ├── predict.py             # Prediction generation
-│   │   ├── pipeline.py            # Full training + prediction pipeline
-│   └── trained/                   # Saved models (.joblib, .keras)
-│
-├── alerts/                        # Alerts generation & acknowledgment APIs
-│   ├── management/commands/run_alerts.py
-│   ├── models.py
-│   ├── views.py
-│   └── urls.py
-│
-├── core/                          # Main APIs & data models
-│   ├── api.py                     # Dashboard & history APIViews
-│   ├── urls.py                    # /api/... endpoints
-│   ├── views.py                   # DRF viewsets for Airfield, WeatherObservation, etc.
-│   ├── models.py
-│   └── management/commands/
-│
-├── dashboard/                     # Frontend UI & static dashboard
-│   ├── templates/dashboard/home.html
-│   ├── urls.py
-│   └── views.py
-│
-├── manage.py
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Installation
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/dhruvindave007/AIrfieldShield.git
-cd AIrfieldShield
-
-# 2. Create virtual environment
-python3 -m venv venv
-source venv/bin/activate   # On Windows: venv\Scripts\activate
-
-# 3. Install dependencies
+python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# 4. Apply migrations
+# optional: rebuild the dataset from the archive (otherwise the committed file is used)
+python scripts/fetch_metar.py --start 2016 --end 2024
+
+# train, evaluate and regenerate docs/evaluation_report.md (about 40 min on a laptop CPU)
+python -m ai_models.ml.train
+python -m ai_models.ml.train --quick            # smoke run
+
+# tests (SQLite, no Redis needed)
+pytest
+```
+
+Running the app:
+
+```bash
 python manage.py migrate
-
-# 5. Create a superuser (optional for admin panel)
-python manage.py createsuperuser
-
-# 6. Run the development server
+python manage.py seed_airfields
+python manage.py run_pipeline       # ingest + predict + alerts once
 python manage.py runserver
+celery -A airfieldshield worker -B  # scheduled cycles (needs Redis)
 ```
-
-Open your browser at [http://127.0.0.1:8000](http://127.0.0.1:8000)
-
----
-
-## Training the AI Model
-
-AirfieldShield includes a single-command training and prediction pipeline.
-
-```bash
-python manage.py pipeline --samples 8000 --seq-len 30 --epochs 8 --batch 64
-```
-
-This performs:
-1. Synthetic data generation for model training.  
-2. Training of ensemble models: RandomForest, LSTM, CNN.  
-3. Creation of meta-learner (logistic regression).  
-4. Automatic prediction generation and saving to DB.  
-5. Refresh of alerts and dashboard data.
-
-All trained models are stored in `ai_models/trained/`.
-
----
-
-## Running the System
-
-Start the local Django server:
-```bash
-python manage.py runserver
-```
-
-Visit the dashboard:
-```
-http://127.0.0.1:8000/
-```
-
-APIs can be tested via:
-```
-/api/frontend/dashboard/?airfield=TEST
-/api/predictions/history/?airfield=TEST&hours=6
-```
-
-If you need to refresh alerts manually:
-```bash
-python manage.py run_alerts
-```
-
----
-
-## Dashboard Overview
-
-The web dashboard provides:
-- **Active Alerts Panel** — Lists all unacknowledged alerts with severity color codes.  
-- **Prediction Cards** — Displays recent AI-generated risk probabilities.  
-- **Storm Activity Map** — Shows simulated storm centers and movement using Leaflet.  
-- **Risk Trend Chart** — Interactive time-series chart showing Thunderstorm and Gale risk percentages over time.  
-- **Current Weather Summary** — Displays temperature, humidity, pressure, wind speed, and radar intensity.  
-- **Auto Refresh** — Every 10 seconds (configurable), data and charts update seamlessly.
-
----
-
-## Data Flow
-
-1. `WeatherObservation` and `Airfield` data are stored in the database.  
-2. The **AI Ensemble Pipeline** processes input sequences, tabular data, and synthetic radar arrays.  
-3. Predictions are written to the `Prediction` table.  
-4. The **Alerts Engine** evaluates those predictions and issues new alerts based on thresholds.  
-5. The **Dashboard Frontend** fetches `/api/frontend/dashboard/` and `/api/predictions/history/` every few seconds to render the map and charts.
-
----
-
-## Results
-
-Below are placeholders for screenshots that demonstrate system functionality:
-
-| Feature | Screenshot |
-|----------|-------------|
-| Dashboard Overview | ![Dashboard Screenshot](<img width="1600" height="868" alt="Screenshot from 2025-10-09 19-58-30" src="https://github.com/user-attachments/assets/efce1ca6-e82f-4cb3-8dea-53a4e299ebd6" />
-) | 
-| Storm Activity Map | ![Storm Map](<img width="1600" height="868" alt="Screenshot from 2025-10-09 20-02-04" src="https://github.com/user-attachments/assets/9935c6e7-337c-465b-ae04-5b98e4d4ce00" />
-) |
-| AI Risk Trend Chart | ![Risk Chart](<img width="1600" height="868" alt="Screenshot from 2025-10-09 20-02-57" src="https://github.com/user-attachments/assets/c7019ccf-9309-48b1-b5d1-50df1a0a884b" />
-) |
-| Active Alerts | ![Alerts](<img width="1600" height="868" alt="Screenshot from 2025-10-09 20-04-49" src="https://github.com/user-attachments/assets/22ba81d4-1b14-47ae-8c42-4585a2fdc219" />
-) |
-
-
----
-
-## Future Scope
-
-- Integration with live open-source weather APIs (e.g., Open-Meteo, NOAA, OpenWeatherMap).  
-- Satellite radar imagery integration for real radar-based CNN model inputs.  
-- Real-time weather station connectivity and IoT sensor feeds.  
-- Advanced anomaly detection and probabilistic ensemble calibration.  
-- Integration with ATC/aviation communication networks for automated alert delivery.  
-- Cloud deployment with load-balanced model inference microservices.
-
----
-
-## Author
-
-**Dhruvin Krutarthkumar Dave**  
-- Location: Ahmedabad, Gujarat, India  
-- Email: [davedhruvin307@gmail.com](mailto:davedhruvin307@gmail.com)  
-- LinkedIn: [www.linkedin.com/in/mrdhruvindave](https://www.linkedin.com/in/mrdhruvindave)
-- Instagram: [www.instagram.com/davedhruvin07](https://www.instagram.com/davedhruvin07)
-
----
-
-## License
-
-This project is licensed under the **MIT License** – see the [LICENSE](LICENSE) file for details.
-

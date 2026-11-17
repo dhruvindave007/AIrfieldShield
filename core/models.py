@@ -31,11 +31,22 @@ class WeatherObservation(models.Model):
     wind_speed_ms = models.FloatField(null=True, blank=True)
     wind_gust_ms = models.FloatField(null=True, blank=True)
     wind_dir_deg = models.FloatField(null=True, blank=True)
+    dewpoint_c = models.FloatField(null=True, blank=True)
+    visibility_km = models.FloatField(null=True, blank=True)
+    # Flags parsed from the METAR observation body (null = unknown / not a METAR)
+    thunderstorm = models.BooleanField(null=True, blank=True)
+    cumulonimbus = models.BooleanField(null=True, blank=True)
+    precipitation = models.BooleanField(null=True, blank=True)
+    # The appended TEMPO/BECMG trend forecast mentions thunderstorm
+    trend_thunderstorm = models.BooleanField(null=True, blank=True)
     raw_payload = models.JSONField(null=True, blank=True)
 
     class Meta:
         indexes = [
             models.Index(fields=["timestamp"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["station", "timestamp"], name="uniq_station_timestamp"),
         ]
 
     def __str__(self):
@@ -50,6 +61,12 @@ class Prediction(models.Model):
     gale_wind_prob = models.FloatField(null=True, blank=True)
     details = models.JSONField(null=True, blank=True)
     confidence = models.FloatField(null=True, blank=True)
+    model_version = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["airfield", "-created_at"], name="pred_airfield_created_idx"),
+        ]
 
     def __str__(self):
         return f"Pred {self.airfield} +{self.horizon_minutes}m @ {self.created_at}"

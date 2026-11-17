@@ -1,10 +1,9 @@
-# airfieldshield/urls.py
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/", include("core.urls")),        # Core APIs
-    path("api/", include("alerts.urls")),      # Alerts APIs
-    path("", include("dashboard.urls")),       # 👈 Add this for your dashboard UI
+    path("api/", include("core.urls")),
+    path("api/alerts/", include("alerts.urls")),
+    path("", include("dashboard.urls")),
 ]

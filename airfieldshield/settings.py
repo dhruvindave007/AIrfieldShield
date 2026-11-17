@@ -1,21 +1,46 @@
-"""
-Django settings for airfieldshield project.
-Production hints included — uses environment variables when available.
-"""
+"""Django settings for AirfieldShield.
 
+All deployment-specific values come from environment variables (optionally
+loaded from a local, git-ignored ``.env`` file). See ``.env.example``.
+"""
 import os
 from pathlib import Path
-from datetime import timedelta
 
-# BASE_DIR (two levels up from this file)
+from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables (you can also use django-environ or python-decouple)
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") in ("1", "True", "true", "yes")
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+try:  # optional convenience for local development
+    from dotenv import load_dotenv
 
-# Application definition
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:  # pragma: no cover
+    pass
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    return os.environ.get(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
+
+
+def env_list(name: str, default: str = "") -> list[str]:
+    return [v.strip() for v in os.environ.get(name, default).split(",") if v.strip()]
+
+
+# Secure by default: DEBUG is off unless explicitly enabled.
+DEBUG = env_bool("DJANGO_DEBUG", False)
+
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "insecure-dev-only-key-do-not-use-in-production"
+    else:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is not enabled "
+            "(copy .env.example to .env for local development).")
+
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -23,21 +48,15 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "django_crontab",
-    'django_extensions',
-
-
     # Third-party
     "rest_framework",
-    "django_celery_results",   # optional, useful for storing celery task/results metadata
-
+    "django_celery_results",
     # Project apps
     "core",
     "ingestion",
     "ai_models",
     "alerts",
     "dashboard",
-    "utils",
 ]
 
 MIDDLEWARE = [
@@ -68,37 +87,14 @@ TEMPLATES = [
     },
 ]
 
-CRONJOBS = [
-    # run pipeline every 5 minutes
-    ('*/5 * * * *', 'django.core.management.call_command', ['run_pipeline']),
-]
-CRONJOBS = [
-    ('*/5 * * * *', 'django.core.management.call_command', ['run_pipeline'], '> /tmp/pipeline.log 2>&1'),
-]
-
-
-
-# Add near top or where you keep constants
-AIRFIELDSHIELD = {
-    "DEFAULT_THUNDERSTORM_THRESHOLD": 0.5,
-    "DEFAULT_GALE_PROB_THRESHOLD": 0.5,
-}
-
-# If you plan to use Celery, add:
-CELERY_BROKER_URL = "redis://localhost:6379/0"
-CELERY_RESULT_BACKEND = "django-db"
-# And in INSTALLED_APPS add 'django_celery_results' (you already have it in previous logs)
-
-
 WSGI_APPLICATION = "airfieldshield.wsgi.application"
 
-# Database
-# Default: SQLite for quick start. For production, set POSTGRES_* env vars.
+# Database: SQLite for local use; PostgreSQL when POSTGRES_DB is set.
 if os.environ.get("POSTGRES_DB"):
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql_psycopg2",
-            "NAME": os.environ.get("POSTGRES_DB"),
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ["POSTGRES_DB"],
             "USER": os.environ.get("POSTGRES_USER", "postgres"),
             "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
             "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
@@ -113,93 +109,84 @@ else:
         }
     }
 
-# Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# Internationalization / timezone
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Asia/Kolkata"
 USE_I18N = True
-USE_L10N = True
 USE_TZ = True
 
-# Static files & media
 STATIC_URL = "/static/"
 STATIC_ROOT = os.environ.get("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
 STATICFILES_DIRS = [BASE_DIR / "static"]
-
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.environ.get("MEDIA_ROOT", str(BASE_DIR / "media"))
 
-# Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Django REST Framework basic config
 REST_FRAMEWORK = {
+    # Anonymous clients may read; every write (including alert acknowledgement)
+    # requires an authenticated session.
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
     ],
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
     "PAGE_SIZE": 50,
 }
 
-# Celery configuration (uses Redis broker by default)
+# Celery
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "django-db")  # use django_celery_results
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "django-db")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    # METARs are issued every 30 minutes (on the hour and half hour); run a few
+    # minutes later so the new report is available.
+    "nowcast-cycle": {
+        "task": "ai_models.tasks.run_nowcast_cycle",
+        "schedule": crontab(minute="7,37"),
+    },
+}
 
-# If using django-celery-results:
-if "django_celery_results" in INSTALLED_APPS:
-    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "django-db")
-
-# Logging (simple console logger tuned for development)
 LOG_LEVEL = os.environ.get("DJANGO_LOG_LEVEL", "INFO")
-
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {"format": "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)s] %(message)s"},
-        "simple": {"format": "%(levelname)s %(message)s"},
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
     },
     "root": {"handlers": ["console"], "level": LOG_LEVEL},
-    "loggers": {
-        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
-        "airfieldshield": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
-    },
 }
 
-# Security recommendations for production (edit when deploying)
+# Production hardening (enable via environment when served over HTTPS)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = os.environ.get("DJANGO_SESSION_COOKIE_SECURE", "0") in ("1", "True", "true")
-CSRF_COOKIE_SECURE = os.environ.get("DJANGO_CSRF_COOKIE_SECURE", "0") in ("1", "True", "true")
+SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", not DEBUG)
+SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", False)
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "0"))
 
-# Custom config for the app
 AIRFIELDSHIELD = {
-    "DEFAULT_ALERT_HORIZONS_MIN": [30, 60, 180, 24 * 60],  # minutes: 30m, 1h, 3h, 24h
-    "DEFAULT_THUNDERSTORM_THRESHOLD": float(os.environ.get("THUNDER_THRESHOLD", 0.5)),
-    "DEFAULT_GALE_WIND_THRESHOLD_MS": float(os.environ.get("GALE_WIND_THRESHOLD_MS", 17.0)),  # ~61 km/h
+    # Forecast horizons served by the model artifact (minutes).
+    "HORIZONS_MIN": [60, 180],
+    # Refuse to predict if the newest observation is older than this.
+    "MAX_OBSERVATION_AGE_MIN": int(os.environ.get("MAX_OBSERVATION_AGE_MIN", "120")),
+    # Fallback probability thresholds for alert levels, used only when a
+    # prediction carries no model-derived thresholds.
+    "FALLBACK_THRESHOLDS": {"p25": 0.25, "p50": 0.50, "p75": 0.75},
+    # Public METAR archive used by `manage.py ingest_metar`.
+    "METAR_ARCHIVE_URL": os.environ.get(
+        "METAR_ARCHIVE_URL", "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"),
 }

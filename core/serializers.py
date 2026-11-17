@@ -14,7 +14,9 @@ class WeatherObservationSerializer(serializers.ModelSerializer):
         fields = [
             "id", "station_id", "timestamp",
             "temperature_c", "humidity", "pressure_hpa",
-            "wind_speed_ms", "wind_gust_ms", "wind_dir_deg", "raw_payload"
+            "wind_speed_ms", "wind_gust_ms", "wind_dir_deg",
+            "dewpoint_c", "visibility_km", "thunderstorm", "cumulonimbus",
+            "precipitation", "trend_thunderstorm", "raw_payload"
         ]
 
 class PredictionSerializer(serializers.ModelSerializer):
@@ -22,7 +24,7 @@ class PredictionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prediction
         fields = [
-            "id", "airfield",
+            "id", "airfield", "horizon_minutes",
             "thunderstorm_prob", "gale_wind_prob",
-            "confidence", "details", "created_at"
+            "confidence", "details", "model_version", "created_at"
         ]

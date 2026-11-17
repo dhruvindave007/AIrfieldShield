@@ -1,0 +1,97 @@
+{
+  "source": "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py",
+  "report_types": "METAR + SPECI (3, 4)",
+  "years": [
+    2016,
+    2024
+  ],
+  "stations": [
+    "VIDP",
+    "VABB",
+    "VOMM",
+    "VECC",
+    "VOBL",
+    "VAAH"
+  ],
+  "hourly_rows": 473472,
+  "qc": {
+    "VIDP": {
+      "malformed_wind_group": 139,
+      "wind_out_of_range": 6,
+      "gust_out_of_range": 0,
+      "implausible_gust_factor": 1,
+      "isolated_wind_spike": 3,
+      "temp_c_out_of_range": 1,
+      "dewpoint_c_out_of_range": 0,
+      "pressure_hpa_out_of_range": 3,
+      "temp_jump": 12,
+      "dewpoint_above_temp": 0,
+      "reports": 154088
+    },
+    "VABB": {
+      "malformed_wind_group": 62,
+      "wind_out_of_range": 1,
+      "gust_out_of_range": 0,
+      "implausible_gust_factor": 0,
+      "isolated_wind_spike": 2,
+      "temp_c_out_of_range": 0,
+      "dewpoint_c_out_of_range": 0,
+      "pressure_hpa_out_of_range": 2,
+      "temp_jump": 0,
+      "dewpoint_above_temp": 0,
+      "reports": 156631
+    },
+    "VOMM": {
+      "malformed_wind_group": 15,
+      "wind_out_of_range": 1,
+      "gust_out_of_range": 0,
+      "implausible_gust_factor": 0,
+      "isolated_wind_spike": 0,
+      "temp_c_out_of_range": 0,
+      "dewpoint_c_out_of_range": 0,
+      "pressure_hpa_out_of_range": 5,
+      "temp_jump": 0,
+      "dewpoint_above_temp": 0,
+      "reports": 155650
+    },
+    "VECC": {
+      "malformed_wind_group": 137,
+      "wind_out_of_range": 6,
+      "gust_out_of_range": 0,
+      "implausible_gust_factor": 0,
+      "isolated_wind_spike": 7,
+      "temp_c_out_of_range": 0,
+      "dewpoint_c_out_of_range": 0,
+      "pressure_hpa_out_of_range": 1568,
+      "temp_jump": 0,
+      "dewpoint_above_temp": 0,
+      "reports": 157932
+    },
+    "VOBL": {
+      "malformed_wind_group": 182,
+      "wind_out_of_range": 0,
+      "gust_out_of_range": 57,
+      "implausible_gust_factor": 87,
+      "isolated_wind_spike": 4,
+      "temp_c_out_of_range": 1,
+      "dewpoint_c_out_of_range": 0,
+      "pressure_hpa_out_of_range": 17,
+      "temp_jump": 3,
+      "dewpoint_above_temp": 0,
+      "reports": 158409
+    },
+    "VAAH": {
+      "malformed_wind_group": 373,
+      "wind_out_of_range": 1,
+      "gust_out_of_range": 0,
+      "implausible_gust_factor": 0,
+      "isolated_wind_spike": 8,
+      "temp_c_out_of_range": 0,
+      "dewpoint_c_out_of_range": 0,
+      "pressure_hpa_out_of_range": 29,
+      "temp_jump": 3,
+      "dewpoint_above_temp": 0,
+      "reports": 152050
+    }
+  }
+}

@@ -1,27 +1,21 @@
-Django>=4.2
-djangorestframework
-psycopg2-binary
-numpy
-pandas
-scikit-learn
-tensorflow   # optional heavy dependency; replace/remove as needed
-celery
-redis
-pillow
-matplotlib
-grpcio         # if you want gRPC integrations
-# requirements.txt
-Django~=5.2.6
-djangorestframework
-django-crontab
-django-extensions
-django-celery-results
-pandas
-numpy
-scikit-learn
-joblib
-tensorflow>=2.12  # minimal Keras LSTM support
-matplotlib
-python-dateutil
-django-cors-headers
+# Runtime
+Django==5.2.19
+djangorestframework==3.18.3
+django-celery-results==2.6.0
+celery==5.7.0
+redis==8.1.0
+python-dotenv==1.2.4
+requests==2.34.2
+psycopg2-binary>=2.9  # only needed when POSTGRES_* env vars are set
 
+# ML
+numpy==2.5.5
+pandas==3.1.1
+scikit-learn==1.9.1
+scipy==1.18.1
+joblib==1.6.0
+matplotlib==3.11.2
+
+# Tests
+pytest==9.2.0
+pytest-django==4.14.0
